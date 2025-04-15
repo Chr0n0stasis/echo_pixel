@@ -1,122 +1,296 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:io' show Platform;
+import 'package:media_kit/media_kit.dart'; // 导入MediaKit
+
+import 'screens/photo_gallery_page.dart';
 
 void main() {
+  // 确保初始化Flutter绑定
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // 初始化MediaKit
+  MediaKit.ensureInitialized();
+
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Echo Pixel',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+        useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.blue,
+          brightness: Brightness.dark,
+        ),
+        useMaterial3: true,
+      ),
+      themeMode: ThemeMode.system,
+      home: const HomeScreen(),
+      debugShowCheckedModeBanner: false,
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _HomeScreenState extends State<HomeScreen> {
+  int _selectedIndex = 0;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  void _incrementCounter() {
+  // 判断是否是桌面平台
+  bool get isDesktop {
+    if (kIsWeb) return false; // 网页版使用移动端布局
+    return !Platform.isAndroid && !Platform.isIOS;
+  }
+
+  // 判断设备方向
+  bool isLandscape(BuildContext context) {
+    return MediaQuery.of(context).orientation == Orientation.landscape;
+  }
+
+  // 页面列表
+  final List<Widget> _pages = [
+    const PhotoGalleryPage(),
+    const AlbumsPage(),
+    const SearchPage(),
+    const SettingsPage(),
+  ];
+
+  // 底部导航项目
+  final List<BottomNavigationBarItem> _bottomNavItems = [
+    const BottomNavigationBarItem(icon: Icon(Icons.photo_library), label: '相册'),
+    const BottomNavigationBarItem(icon: Icon(Icons.collections), label: '合集'),
+    const BottomNavigationBarItem(icon: Icon(Icons.search), label: '搜索'),
+    const BottomNavigationBarItem(icon: Icon(Icons.settings), label: '设置'),
+  ];
+
+  // 侧拉栏列表项
+  List<Widget> _buildDrawerItems() {
+    return [
+      DrawerHeader(
+        decoration: BoxDecoration(color: Theme.of(context).colorScheme.primary),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            const Text(
+              'Echo Pixel',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '您的跨平台相册',
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.8),
+                fontSize: 16,
+              ),
+            ),
+          ],
+        ),
+      ),
+      ListTile(
+        selected: _selectedIndex == 0,
+        leading: const Icon(Icons.photo_library),
+        title: const Text('相册'),
+        onTap: () {
+          _onItemTapped(0);
+          if (!isDesktop) Navigator.pop(context);
+        },
+      ),
+      ListTile(
+        selected: _selectedIndex == 1,
+        leading: const Icon(Icons.collections),
+        title: const Text('合集'),
+        onTap: () {
+          _onItemTapped(1);
+          if (!isDesktop) Navigator.pop(context);
+        },
+      ),
+      ListTile(
+        selected: _selectedIndex == 2,
+        leading: const Icon(Icons.search),
+        title: const Text('搜索'),
+        onTap: () {
+          _onItemTapped(2);
+          if (!isDesktop) Navigator.pop(context);
+        },
+      ),
+      const Divider(),
+      ListTile(
+        selected: _selectedIndex == 3,
+        leading: const Icon(Icons.settings),
+        title: const Text('设置'),
+        onTap: () {
+          _onItemTapped(3);
+          if (!isDesktop) Navigator.pop(context);
+        },
+      ),
+      const Divider(),
+      ListTile(
+        leading: const Icon(Icons.cloud_sync),
+        title: const Text('WebDAV同步'),
+        onTap: () {
+          // 打开WebDAV同步设置
+          if (!isDesktop) Navigator.pop(context);
+        },
+      ),
+      const Divider(),
+      const AboutListTile(
+        icon: Icon(Icons.info),
+        applicationName: 'Echo Pixel',
+        applicationVersion: '1.0.0',
+        applicationLegalese: '© 2025 Echo Pixel',
+        child: Text('关于应用'),
+      ),
+    ];
+  }
+
+  void _onItemTapped(int index) {
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      _selectedIndex = index;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
+    // 检测设备是否为平板或大屏设备（宽度 > 600dp）
+    final bool isTabletOrLarger = MediaQuery.of(context).size.width > 600;
+
     return Scaffold(
+      key: _scaffoldKey,
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
+        title: const Text('Echo Pixel'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.cloud_sync),
+            onPressed: () {
+              // 显示同步状态或触发同步
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.more_vert),
+            onPressed: () {
+              // 显示更多选项
+            },
+          ),
+        ],
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+      drawer: isDesktop || isTabletOrLarger
+          ? null
+          : Drawer(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: _buildDrawerItems(),
+              ),
             ),
-          ],
-        ),
+      body: Row(
+        children: [
+          // 在桌面端或平板横屏模式显示永久侧边栏
+          if (isDesktop || (isTabletOrLarger && isLandscape(context)))
+            NavigationRail(
+              extended: isDesktop || MediaQuery.of(context).size.width > 800,
+              destinations: const [
+                NavigationRailDestination(
+                  icon: Icon(Icons.photo_library),
+                  label: Text('相册'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.collections),
+                  label: Text('合集'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.search),
+                  label: Text('搜索'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.settings),
+                  label: Text('设置'),
+                ),
+              ],
+              selectedIndex: _selectedIndex,
+              onDestinationSelected: _onItemTapped,
+            ),
+          // 主内容区域
+          Expanded(child: _pages[_selectedIndex]),
+        ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
+      // 在移动端显示底部导航栏，桌面端不显示
+      bottomNavigationBar:
+          (!isDesktop && (!isTabletOrLarger || !isLandscape(context)))
+              ? BottomNavigationBar(
+                  items: _bottomNavItems,
+                  currentIndex: _selectedIndex,
+                  onTap: _onItemTapped,
+                  type: BottomNavigationBarType.fixed,
+                )
+              : null,
+      floatingActionButton: _selectedIndex < 2
+          ? FloatingActionButton(
+              onPressed: () {
+                // 添加照片或创建新相册
+              },
+              tooltip: _selectedIndex == 0 ? '添加照片' : '创建相册',
+              child: const Icon(Icons.add),
+            )
+          : null,
+    );
+  }
+}
+
+// 相册合集页面
+class AlbumsPage extends StatelessWidget {
+  const AlbumsPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.all(16.0),
+      child: Center(child: Text('相册合集页面 - 这里将显示所有相册')),
+    );
+  }
+}
+
+// 搜索页面
+class SearchPage extends StatelessWidget {
+  const SearchPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.all(16.0),
+      child: Center(child: Text('搜索页面 - 这里可以搜索照片')),
+    );
+  }
+}
+
+// 设置页面
+class SettingsPage extends StatelessWidget {
+  const SettingsPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.all(16.0),
+      child: Center(child: Text('设置页面 - 这里将包含应用设置和WebDAV配置')),
     );
   }
 }
