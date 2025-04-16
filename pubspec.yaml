@@ -39,14 +39,15 @@ dependencies:
   intl: ^0.20.2
   shared_preferences: ^2.2.2
   
+  # 权限处理
+  permission_handler: ^11.2.0
+  device_info_plus: ^11.3.3
+  
   # 新增缺少的依赖
   http: ^1.1.0
   photo_manager: ^3.6.4
   synchronized: ^3.1.0
   uuid: ^4.2.1
-  
-  # 视频缩略图生成
-  video_thumbnail: ^0.5.3
   
   # MediaKit相关依赖 - 跨平台媒体解决方案
   media_kit: ^1.1.10                            # 核心包
@@ -61,6 +62,9 @@ dependencies:
   
   # 缓存管理
   flutter_cache_manager: ^3.3.1
+  fc_native_video_thumbnail: ^0.17.2
+  photo_view: ^0.15.0
+  share_plus: ^10.1.4
 
 dev_dependencies:
   flutter_test:

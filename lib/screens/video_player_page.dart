@@ -69,7 +69,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
       backgroundColor: Colors.black,
       appBar: AppBar(
         title: Text(widget.mediaFile.fileName),
-        backgroundColor: Colors.black.withOpacity(0.5),
+        backgroundColor: Colors.black.withValues(alpha: 0.5),
         elevation: 0,
       ),
       body: _hasError
@@ -89,7 +89,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           Icon(
             Icons.error_outline,
             size: 64,
-            color: Colors.white.withOpacity(0.5),
+            color: Colors.white.withValues(alpha: 0.5),
           ),
           const SizedBox(height: 16),
           Padding(
@@ -98,7 +98,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
               _errorMessage ?? '播放视频时发生错误',
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: Colors.white.withOpacity(0.7),
+                color: Colors.white.withValues(alpha: 0.7),
                 fontSize: 16,
               ),
             ),
@@ -154,7 +154,7 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
           // 视频信息面板
           Container(
             padding: const EdgeInsets.all(16),
-            color: Colors.black.withOpacity(0.8),
+            color: Colors.black.withValues(alpha: 0.8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

@@ -270,8 +270,8 @@ class _WebDavSettingsScreenState extends State<WebDavSettingsScreen> {
                   padding: const EdgeInsets.all(8.0),
                   decoration: BoxDecoration(
                     color: _isConnected
-                        ? Colors.green.withOpacity(0.1)
-                        : Colors.red.withOpacity(0.1),
+                        ? Colors.green.withValues(alpha: 25)
+                        : Colors.red.withValues(alpha: 25),
                     borderRadius: BorderRadius.circular(4.0),
                   ),
                   child: Text(

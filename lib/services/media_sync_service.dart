@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -11,6 +12,7 @@ import '../models/device_info.dart';
 import '../models/media_index.dart';
 import 'webdav_service.dart';
 import 'desktop_media_scanner.dart';
+import 'mobile_media_scanner.dart'; // 添加导入MobileMediaScanner
 
 /// 媒体同步服务
 /// 负责扫描本地媒体、构建索引、与云端同步
@@ -23,6 +25,9 @@ class MediaSyncService {
 
   /// 桌面媒体扫描器
   final DesktopMediaScanner _desktopScanner = DesktopMediaScanner();
+
+  /// 移动媒体扫描器
+  late final MobileMediaScanner _mobileScanner;
 
   /// 设备信息
   DeviceInfo? _deviceInfo;
@@ -58,7 +63,26 @@ class MediaSyncService {
   Function(String)? onSyncStatusUpdate;
 
   MediaSyncService(this._webdavService, {int maxConcurrentTasks = 5})
-      : _maxConcurrentTasks = maxConcurrentTasks;
+      : _maxConcurrentTasks = maxConcurrentTasks {
+    // 初始化移动媒体扫描器，提供进度更新回调
+    _mobileScanner = MobileMediaScanner(onProgressUpdate: (progress) {
+      _syncProgress = progress;
+      // 可选：通过回调通知UI更新进度
+      if (onSyncStatusUpdate != null) {
+        onSyncStatusUpdate!('扫描进度: $progress%');
+      }
+    }, onScanComplete: (indices) {
+      _mediaIndices.addAll(indices);
+      if (onSyncStatusUpdate != null) {
+        onSyncStatusUpdate!('扫描完成，发现 ${indices.length} 个媒体分组');
+      }
+    }, onScanError: (error) {
+      _syncError = error;
+      if (onSyncStatusUpdate != null) {
+        onSyncStatusUpdate!('扫描错误: $error');
+      }
+    });
+  }
 
   /// 获取同步状态
   bool get isSyncing => _isSyncing;
@@ -109,7 +133,7 @@ class MediaSyncService {
         _syncProgress = _desktopScanner.scanProgress;
         _syncError = _desktopScanner.scanError;
       } else {
-        // 移动平台 - 使用 photo_manager
+        // 移动平台 - 使用优化的移动媒体扫描器
         await _scanMobileMedia();
       }
 
@@ -129,118 +153,23 @@ class MediaSyncService {
         (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
   }
 
-  /// 扫描移动平台媒体
+  /// 扫描移动平台媒体 - 优化版本，使用MobileMediaScanner减少UI线程阻塞
   Future<void> _scanMobileMedia() async {
-    // 请求媒体访问权限
-    final PermissionState result = await PhotoManager.requestPermissionExtend();
-    if (!result.isAuth) {
-      throw Exception('没有获得访问相册的权限');
-    }
-
-    // 获取所有媒体资源
-    final List<AssetPathEntity> albums = await PhotoManager.getAssetPathList(
-      onlyAll: true,
-      type: RequestType.common,
-    );
-
-    if (albums.isEmpty) return;
-
-    // 获取第一个相册中的所有资源（通常是"全部"相册）
-    final AssetPathEntity allAlbum = albums.first;
-    final List<AssetEntity> mediaAssets = await allAlbum.getAssetListRange(
-      start: 0,
-      end: await allAlbum.assetCountAsync,
-    );
-
-    // 处理每个媒体资源
-    for (int i = 0; i < mediaAssets.length; i++) {
-      final asset = mediaAssets[i];
-      await _processMediaAsset(asset);
-
-      // 更新扫描进度
-      _syncProgress = ((i + 1) / mediaAssets.length * 100).round();
-    }
-  }
-
-  /// 处理单个媒体资源
-  Future<void> _processMediaAsset(AssetEntity asset) async {
     try {
-      // 获取媒体文件
-      final File? mediaFile = await asset.file;
-      if (mediaFile == null) return;
-
-      // 文件基本信息
-      final String originalPath = mediaFile.path;
-      final String fileName = path.basename(originalPath);
-      final String nameWithoutExt = path.basenameWithoutExtension(originalPath);
-      final String ext = path.extension(originalPath).replaceAll('.', '');
-      final int fileSize = await mediaFile.length();
-
-      // 确定媒体类型
-      MediaType mediaType;
-      if (asset.type == AssetType.image) {
-        mediaType = MediaType.image;
-      } else if (asset.type == AssetType.video) {
-        mediaType = MediaType.video;
-      } else {
-        mediaType = MediaType.unknown;
+      if (onSyncStatusUpdate != null) {
+        onSyncStatusUpdate!('开始扫描移动端媒体...');
       }
 
-      // 生成文件唯一ID
-      final Uint8List bytes = await mediaFile.readAsBytes();
-      final String mediaId = await MediaFileInfo.generateIdFromFile(bytes);
+      // 使用MobileMediaScanner在隔离进程中执行扫描
+      await _mobileScanner.scanMobileMedia();
 
-      // 媒体分辨率
-      final MediaResolution resolution = MediaResolution(
-        width: asset.width,
-        height: asset.height,
-      );
-
-      // 媒体时长（仅适用于视频）
-      Duration? duration;
-      if (asset.type == AssetType.video) {
-        duration = asset.videoDuration;
-      }
-
-      // 根据媒体创建日期获取日期路径
-      final datePath = MediaIndex.getDatePath(asset.createDateTime);
-
-      // 创建媒体文件信息对象
-      final mediaInfo = MediaFileInfo(
-        id: mediaId,
-        originalPath: originalPath,
-        name: nameWithoutExt,
-        extension: ext,
-        size: fileSize,
-        type: mediaType,
-        createdAt: asset.createDateTime,
-        modifiedAt: asset.modifiedDateTime ?? asset.createDateTime,
-        resolution: resolution,
-        duration: duration,
-        isSynced: false,
-      );
-
-      // 检查云端映射，判断是否已同步
-      if (_cloudMapping != null) {
-        final mapping = _cloudMapping!.findMappingById(mediaId);
-        if (mapping != null) {
-          mediaInfo.isSynced = true;
-          mediaInfo.cloudPath = mapping.cloudPath;
-        }
-      }
-
-      // 将媒体文件添加到按日期索引的集合中
-      if (!_mediaIndices.containsKey(datePath)) {
-        _mediaIndices[datePath] = MediaIndex(
-          datePath: datePath,
-          mediaFiles: [],
-        );
-      }
-
-      // 添加到对应日期的索引中
-      _mediaIndices[datePath]!.mediaFiles.add(mediaInfo);
+      // 结果已在onScanComplete回调中添加到_mediaIndices
     } catch (e) {
-      debugPrint('处理媒体文件错误：$e');
+      _syncError = '扫描媒体文件错误: $e';
+      if (onSyncStatusUpdate != null) {
+        onSyncStatusUpdate!('扫描出错: $e');
+      }
+      rethrow;
     }
   }
 
@@ -485,32 +414,73 @@ class MediaSyncService {
       // 筛选出设备目录
       final deviceDirs = items.where((item) => item.isDirectory).toList();
 
+      // 打印详细日志，帮助调试
+      debugPrint(
+          'WebDAV目录列表结果: ${items.map((item) => "${item.path} (${item.isDirectory ? "目录" : "文件"})").join(", ")}');
+      debugPrint(
+          '找到${deviceDirs.length}个设备目录：${deviceDirs.map((d) => path.basename(d.path)).join(", ")}');
+
+      if (deviceDirs.isEmpty) {
+        debugPrint('警告: 未找到任何设备目录，可能是WebDAV路径问题');
+        // 检查当前设备目录是否存在并创建
+        final currentDevicePath = '$mappingsDirPath/${_deviceInfo!.uuid}';
+        await _ensureCloudDirectoryExists(currentDevicePath);
+        debugPrint('已确保当前设备目录存在: ${_deviceInfo!.uuid}');
+        return;
+      }
+
       // 遍历每个设备目录，下载并解析映射表
       for (final deviceDir in deviceDirs) {
         // 跳过当前设备的映射表，因为已经处理过
-        if (path.basename(deviceDir.path) == _deviceInfo!.uuid) continue;
+        final deviceId = path.basename(deviceDir.path);
+        if (deviceId == _deviceInfo!.uuid) {
+          debugPrint('跳过当前设备的映射表: $deviceId');
+          continue;
+        }
+
+        debugPrint('正在处理设备映射表: $deviceId');
 
         try {
           // 列出设备目录
-          final deviceItems = await _webdavService.listDirectory(
-            deviceDir.path,
-          );
+          final deviceItems =
+              await _webdavService.listDirectory(deviceDir.path);
+          debugPrint(
+              '设备目录内容: ${deviceItems.map((i) => path.basename(i.path)).join(", ")}');
 
           // 查找映射文件
           final mappingFile = deviceItems.firstWhere(
             (item) =>
-                !item.isDirectory && path.basename(item.path) == 'mapping.json',
-            orElse: () => throw Exception('未找到映射文件'),
+                !item.isDirectory &&
+                path.basename(item.path).toLowerCase() == 'mapping.json',
+            orElse: () {
+              debugPrint('未找到映射文件: ${deviceDir.path}');
+              return throw Exception('未找到映射文件');
+            },
           );
+
+          debugPrint('找到设备映射文件: ${mappingFile.path}');
 
           // 下载映射文件
           final tempDir = await getTemporaryDirectory();
           final tempFile = File('${tempDir.path}/temp_download_mapping.json');
           await _webdavService.downloadFile(mappingFile.path, tempFile.path);
 
+          // 检查文件大小
+          final fileSize = await tempFile.length();
+          debugPrint('下载的映射文件大小: $fileSize 字节');
+
+          if (fileSize == 0) {
+            debugPrint('警告: 下载的映射文件为空');
+            continue;
+          }
+
           // 解析映射表
           final jsonString = await tempFile.readAsString();
+          debugPrint(
+              '映射文件内容前100字符: ${jsonString.substring(0, min(100, jsonString.length))}');
+
           final otherMapping = CloudMediaMapping.fromJsonString(jsonString);
+          debugPrint('成功解析设备$deviceId的映射，包含${otherMapping.mappings.length}个项目');
 
           // 合并映射（只添加本地没有的媒体文件）
           await _mergeMappings(otherMapping);
@@ -575,36 +545,20 @@ class MediaSyncService {
     debugPrint('已合并${newMappings.length}个新媒体文件的映射');
   }
 
-  /// 确保云端目录结构存在
+  /// 确保云端目录结构存在 - 仅创建必要的根目录
   Future<void> _createCloudDirectories() async {
     try {
-      // 创建根目录
+      // 只创建基础目录结构
+      debugPrint('创建云端必要的目录结构');
       await _ensureCloudDirectoryExists('/EchoPixel');
-
-      // 创建映射表目录
       await _ensureCloudDirectoryExists('/EchoPixel/.mappings');
       await _ensureCloudDirectoryExists(
         '/EchoPixel/.mappings/${_deviceInfo!.uuid}',
       );
 
-      // 获取所有需要的日期目录
-      final Set<String> datePaths = {};
-      if (_cloudMapping != null) {
-        for (final mapping in _cloudMapping!.mappings) {
-          final dirPath =
-              path.dirname(mapping.cloudPath).replaceAll('/EchoPixel/', '');
-          if (dirPath.isNotEmpty) {
-            datePaths.add(dirPath);
-          }
-        }
-      }
-
-      // 创建日期目录
-      for (final datePath in datePaths) {
-        await _ensureCloudDirectoryExists('/EchoPixel/$datePath');
-      }
+      // 不再预先创建所有日期目录，改为在上传文件时按需创建
     } catch (e) {
-      debugPrint('创建云端目录结构错误：$e');
+      debugPrint('创建云端基础目录结构错误：$e');
       rethrow;
     }
   }
@@ -613,10 +567,22 @@ class MediaSyncService {
   Future<void> _ensureCloudDirectoryExists(String dirPath) async {
     try {
       // 尝试列出目录来检查是否存在
-      await _webdavService.listDirectory(dirPath);
+      try {
+        await _webdavService.listDirectory(dirPath);
+        debugPrint('目录已存在: $dirPath');
+      } catch (e) {
+        debugPrint('目录不存在，尝试创建: $dirPath');
+        // 目录不存在，使用递归创建功能
+        final success = await _webdavService.createDirectoryRecursive(dirPath);
+        if (success) {
+          debugPrint('成功创建目录: $dirPath');
+        } else {
+          throw Exception('无法创建目录: $dirPath');
+        }
+      }
     } catch (e) {
-      // 目录不存在，创建它
-      await _webdavService.createDirectory(dirPath);
+      debugPrint('确保目录存在时出错: $e');
+      rethrow;
     }
   }
 
@@ -661,8 +627,29 @@ class MediaSyncService {
           onSyncStatusUpdate!("$fileName -> ${mapping.cloudPath}");
         }
 
-        // 上传到云端
-        await _webdavService.uploadFile(mapping.cloudPath, localFile);
+        try {
+          // 尝试直接上传到云端
+          await _webdavService.uploadFile(mapping.cloudPath, localFile);
+        } catch (uploadError) {
+          // 如果上传失败，检查是否因为目录不存在
+          if (uploadError.toString().contains('not found') ||
+              uploadError.toString().contains('not exist') ||
+              uploadError.toString().contains('404') ||
+              uploadError.toString().toLowerCase().contains('directory')) {
+            // 获取目标目录路径
+            final dirPath = path.dirname(mapping.cloudPath);
+            debugPrint('目录不存在，尝试创建：$dirPath');
+
+            // 创建目录（可能需要递归创建）
+            await _ensureCloudDirectoryExists(dirPath);
+
+            // 再次尝试上传
+            await _webdavService.uploadFile(mapping.cloudPath, localFile);
+          } else {
+            // 其他错误，重新抛出
+            rethrow;
+          }
+        }
 
         // 更新状态和进度
         await progressLock.synchronized(() {
@@ -798,5 +785,36 @@ class MediaSyncService {
       allFiles.addAll(index.mediaFiles);
     }
     return allFiles;
+  }
+
+  // 确保用户上传路径有效
+  String _ensureValidPath(String? path) {
+    if (path == null || path.isEmpty) {
+      return '/';
+    }
+
+    // 确保路径以/开头
+    String validPath = path.startsWith('/') ? path : '/$path';
+    // 确保路径以/结尾
+    if (!validPath.endsWith('/')) {
+      validPath = '$validPath/';
+    }
+    return validPath;
+  }
+
+  /// 从外部设置媒体索引（用于避免重复扫描）
+  Future<void> setMediaIndices(Map<String, MediaIndex> indices) async {
+    if (!_initialized) await initialize();
+
+    // 清空旧的媒体索引并添加新的
+    _mediaIndices.clear();
+    _mediaIndices.addAll(indices);
+
+    // 更新本地的云端映射表
+    await _updateCloudMapping();
+
+    if (onSyncStatusUpdate != null) {
+      onSyncStatusUpdate!('已导入 ${indices.length} 个媒体分组，无需重新扫描');
+    }
   }
 }

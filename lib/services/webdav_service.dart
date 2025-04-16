@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'package:flutter/rendering.dart';
 import 'package:http/http.dart' as http;
 
 class WebDavService {
@@ -74,6 +75,47 @@ class WebDavService {
 
       return response.statusCode == 201 || response.statusCode == 200;
     } catch (e) {
+      throw Exception('Error creating directory: $e');
+    }
+  }
+
+  // 递归创建目录（处理嵌套目录创建）
+  Future<bool> createDirectoryRecursive(String path) async {
+    if (!_isConnected) {
+      throw Exception('WebDAV not connected');
+    }
+
+    try {
+      // 首先尝试直接创建
+      final response = await _makeRequest(method: 'MKCOL', path: path);
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        return true;
+      }
+
+      // 如果失败且是因为父目录不存在
+      if (response.statusCode == 409 || response.statusCode == 404) {
+        // 获取父目录路径
+        final parentPath = path.substring(0, path.lastIndexOf('/'));
+        if (parentPath.isEmpty || parentPath == path) {
+          throw Exception('Invalid directory path: $path');
+        }
+
+        // 递归创建父目录
+        debugPrint('尝试创建父目录: $parentPath');
+        final parentSuccess = await createDirectoryRecursive(parentPath);
+
+        if (parentSuccess) {
+          // 父目录创建成功，再次尝试创建当前目录
+          final retryResponse = await _makeRequest(method: 'MKCOL', path: path);
+          return retryResponse.statusCode == 201 ||
+              retryResponse.statusCode == 200;
+        }
+      }
+
+      return false;
+    } catch (e) {
+      debugPrint('创建目录错误: $e');
       throw Exception('Error creating directory: $e');
     }
   }
@@ -180,41 +222,121 @@ class WebDavService {
 
   // 解析WebDAV目录列表响应
   List<WebDavItem> _parseMultiStatus(String xml, String basePath) {
-    // 简单实现，生产环境应使用正规的XML解析器
     final items = <WebDavItem>[];
 
-    // 简单提取href和resourcetype
-    final hrefRegExp = RegExp(r'<D:href>(.*?)</D:href>', multiLine: true);
-    final isCollectionRegExp = RegExp(
-      r'<D:resourcetype>\s*<D:collection/>\s*</D:resourcetype>',
+    // 使用更精确的正则表达式来提取信息
+    final responseRegExp = RegExp(
+      r'<D:response[^>]*>(.*?)</D:response>',
       multiLine: true,
+      dotAll: true,
     );
 
-    final matches = hrefRegExp.allMatches(xml);
-    for (var match in matches) {
-      final href = match.group(1)!;
+    // 确保基础路径格式统一（以/结尾）
+    if (!basePath.endsWith('/')) {
+      basePath = '$basePath/';
+    }
 
-      // 跳过当前目录
-      if (href.endsWith('/') && basePath.endsWith('/') && href == basePath) {
+    // 调试日志：显示收到的XML内容的前200个字符
+    debugPrint(
+        '解析WebDAV响应，内容开头: ${xml.length > 200 ? "${xml.substring(0, 200)}..." : xml}');
+    debugPrint('基础路径: $basePath');
+
+    final responses = responseRegExp.allMatches(xml);
+    debugPrint('找到 ${responses.length} 个响应元素');
+
+    for (var response in responses) {
+      final responseText = response.group(1)!;
+
+      // 提取 href
+      final hrefRegExp = RegExp(r'<D:href>(.*?)</D:href>', dotAll: true);
+      final hrefMatch = hrefRegExp.firstMatch(responseText);
+      if (hrefMatch == null) continue;
+
+      var href = hrefMatch.group(1)!;
+
+      // 输出原始href内容，帮助调试
+      debugPrint('原始href: $href');
+
+      // 统一路径格式，处理URL编码
+      href = Uri.decodeComponent(href);
+
+      // 移除服务器前缀路径部分，使其相对于请求的路径
+      final serverPrefix = Uri.parse(_serverUrl ?? '').path;
+      if (serverPrefix.isNotEmpty && href.startsWith(serverPrefix)) {
+        href = href.substring(serverPrefix.length);
+      }
+
+      // 确保路径以/开头
+      if (!href.startsWith('/')) {
+        href = '/$href';
+      }
+
+      // 跳过当前目录的引用
+      if (href == basePath) {
+        debugPrint('跳过当前目录引用: $href');
         continue;
       }
 
-      final itemXml = xml.substring(
-        match.start,
-        xml.indexOf('</D:response>', match.start) + 13,
+      // 多种方法判断是否为目录
+      bool isCollection = false;
+
+      // 方法1: 标准WebDAV目录标识
+      final isCollectionRegExp = RegExp(
+        r'<D:resourcetype[^>]*>\s*<D:collection/>\s*</D:resourcetype>',
+        multiLine: true,
+        dotAll: true,
       );
-      final isCollection = isCollectionRegExp.hasMatch(itemXml);
+      isCollection = isCollectionRegExp.hasMatch(responseText);
 
-      // 提取最后一级路径名作为名称
-      String name = href;
-      if (name.endsWith('/')) {
-        name = name.substring(0, name.length - 1);
+      // 方法2：路径以斜线结尾通常表示目录
+      if (!isCollection && href.endsWith('/')) {
+        isCollection = true;
+        debugPrint('基于路径结尾的斜杠判定为目录: $href');
       }
-      name = name.split('/').last;
 
-      items.add(WebDavItem(path: href, name: name, isDirectory: isCollection));
+      // 方法3：检查常见的contenttype标记
+      if (!isCollection) {
+        final contentTypeRegExp = RegExp(
+          r'<D:getcontenttype>(.*?)</D:getcontenttype>',
+          dotAll: true,
+        );
+        final contentTypeMatch = contentTypeRegExp.firstMatch(responseText);
+        if (contentTypeMatch != null) {
+          final contentType = contentTypeMatch.group(1)!.toLowerCase();
+          // 如果内容类型包含directory或collection，视为目录
+          if (contentType.contains('directory') ||
+              contentType.contains('collection')) {
+            isCollection = true;
+            debugPrint('基于内容类型判定为目录: $contentType');
+          }
+        }
+      }
+
+      // 获取名称
+      String name;
+      if (href.endsWith('/')) {
+        name = href.substring(0, href.length - 1).split('/').last;
+      } else {
+        name = href.split('/').last;
+      }
+
+      // 如果没有名称，可能是根目录，跳过
+      if (name.isEmpty) continue;
+
+      // 添加到结果列表
+      final item = WebDavItem(
+        path: href,
+        name: name,
+        isDirectory: isCollection,
+      );
+
+      items.add(item);
+      debugPrint('已添加项目: $item');
     }
 
+    // 最终结果日志
+    debugPrint(
+        '共解析出 ${items.length} 个项目，其中目录 ${items.where((item) => item.isDirectory).length} 个');
     return items;
   }
 }

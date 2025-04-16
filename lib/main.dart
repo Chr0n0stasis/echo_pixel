@@ -1,18 +1,48 @@
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:io' show Platform;
 import 'package:media_kit/media_kit.dart'; // 导入MediaKit
+import 'package:permission_handler/permission_handler.dart'; // 导入权限处理包
 
 import 'screens/photo_gallery_page.dart';
 
-void main() {
+void main() async {
   // 确保初始化Flutter绑定
   WidgetsFlutterBinding.ensureInitialized();
 
   // 初始化MediaKit
   MediaKit.ensureInitialized();
 
+  // 在Android平台上请求权限
+  if (Platform.isAndroid) {
+    await requestPermissions();
+  }
+
   runApp(const MyApp());
+}
+
+// 请求所需的权限
+Future<void> requestPermissions() async {
+  // 针对不同Android版本请求不同权限
+  if (Platform.isAndroid) {
+    // 获取 Android SDK 版本
+    final androidInfo = await DeviceInfoPlugin().androidInfo;
+    final sdkInt = androidInfo.version.sdkInt;
+
+    if (sdkInt >= 33) {
+      // Android 13及以上使用新的细粒度权限
+      await Future.wait([
+        Permission.photos.request(),
+        Permission.videos.request(),
+      ]);
+    } else {
+      // 较旧版本使用存储权限
+      await Permission.storage.request();
+    }
+
+    // 网络权限不需要动态申请
+  }
 }
 
 class MyApp extends StatelessWidget {
@@ -51,6 +81,9 @@ class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
+  // 对相册页面的引用，用于后续控制
+  late final PhotoGalleryPage _photoGalleryPage;
+
   // 判断是否是桌面平台
   bool get isDesktop {
     if (kIsWeb) return false; // 网页版使用移动端布局
@@ -62,9 +95,44 @@ class _HomeScreenState extends State<HomeScreen> {
     return MediaQuery.of(context).orientation == Orientation.landscape;
   }
 
+  // 创建带有回调的相册页面实例
+  void _initializePhotoGalleryPage() {
+    _photoGalleryPage = PhotoGalleryPage(
+      // 提供回调函数，在相册页面可以调用主页面的方法
+      onSyncRequest: _handleSyncRequest,
+      onWebDavSettingsRequest: _handleWebDavSettingsRequest,
+      onRefreshRequest: _handleRefreshRequest,
+    );
+  }
+
+  // 同步按钮回调
+  void _handleSyncRequest() {
+    // 这个方法会被相册页面调用
+    debugPrint('主页面：收到同步请求');
+    // 在这里可以添加任何需要在主页面处理的同步相关逻辑
+  }
+
+  // WebDAV设置回调
+  void _handleWebDavSettingsRequest() {
+    debugPrint('主页面：收到WebDAV设置请求');
+    // 在这里可以添加任何需要在主页面处理的WebDAV设置相关逻辑
+  }
+
+  // 刷新请求回调
+  void _handleRefreshRequest() {
+    debugPrint('主页面：收到刷新请求');
+    // 在这里可以添加任何需要在主页面处理的刷新相关逻辑
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _initializePhotoGalleryPage();
+  }
+
   // 页面列表
-  final List<Widget> _pages = [
-    const PhotoGalleryPage(),
+  late final List<Widget> _pages = [
+    _photoGalleryPage,
     const AlbumsPage(),
     const SearchPage(),
     const SettingsPage(),
@@ -99,7 +167,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(
               '您的跨平台相册',
               style: TextStyle(
-                color: Colors.white.withOpacity(0.8),
+                color: Colors.white.withValues(alpha: 0.8),
                 fontSize: 16,
               ),
             ),
@@ -177,20 +245,82 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       key: _scaffoldKey,
       appBar: AppBar(
-        title: const Text('Echo Pixel'),
+        // 移除"Echo Pixel"标题，改为根据当前页面显示不同的标题
+        title: Text(_selectedIndex == 0
+            ? '照片库'
+            : _selectedIndex == 1
+                ? '合集'
+                : _selectedIndex == 2
+                    ? '搜索'
+                    : '设置'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.cloud_sync),
-            onPressed: () {
-              // 显示同步状态或触发同步
+          // 集成相册页面的功能按钮
+          if (_selectedIndex == 0) ...[
+            // 同步按钮 - 使用控制器直接调用相册页面的功能
+            IconButton(
+              tooltip: '同步媒体文件',
+              onPressed: () {
+                PhotoGalleryPage.controller.syncWithWebDav();
+              },
+              icon: const Icon(Icons.sync),
+            ),
+
+            // WebDAV设置按钮 - 使用控制器直接调用相册页面的功能
+            IconButton(
+              tooltip: 'WebDAV设置',
+              onPressed: () {
+                PhotoGalleryPage.controller.openWebDavSettings();
+              },
+              icon: const Icon(Icons.cloud),
+            ),
+          ],
+
+          // 其他页面的功能按钮
+          if (_selectedIndex != 0)
+            IconButton(
+              icon: const Icon(Icons.cloud_sync),
+              onPressed: () {
+                // 显示同步状态或触发同步
+              },
+            ),
+
+          // 更多选项菜单
+          PopupMenuButton<String>(
+            onSelected: (value) {
+              switch (value) {
+                case 'refresh':
+                  if (_selectedIndex == 0) {
+                    PhotoGalleryPage.controller.refresh();
+                  }
+                  break;
+                case 'settings':
+                  _onItemTapped(3); // 跳转到设置页面
+                  break;
+              }
             },
-          ),
-          IconButton(
-            icon: const Icon(Icons.more_vert),
-            onPressed: () {
-              // 显示更多选项
-            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'refresh',
+                child: Row(
+                  children: [
+                    Icon(Icons.refresh),
+                    SizedBox(width: 8),
+                    Text('刷新'),
+                  ],
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'settings',
+                child: Row(
+                  children: [
+                    Icon(Icons.settings),
+                    SizedBox(width: 8),
+                    Text('设置'),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
