@@ -1,9 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/webdav_service.dart';
+import '../services/media_sync_service.dart';
+import 'webdav_status_page.dart';
 
 class WebDavSettingsScreen extends StatefulWidget {
-  const WebDavSettingsScreen({super.key});
+  final MediaSyncService? mediaSyncService;
+
+  const WebDavSettingsScreen({
+    Key? key,
+    this.mediaSyncService,
+  }) : super(key: key);
 
   @override
   State<WebDavSettingsScreen> createState() => _WebDavSettingsScreenState();
@@ -17,6 +24,7 @@ class _WebDavSettingsScreenState extends State<WebDavSettingsScreen> {
   final _uploadRootPathController = TextEditingController(text: '/');
   final _maxConcurrentTasksController = TextEditingController(text: '5');
   final _webDavService = WebDavService();
+  late final MediaSyncService _mediaSyncService;
 
   bool _isConnecting = false;
   bool _isConnected = false;
@@ -35,6 +43,10 @@ class _WebDavSettingsScreenState extends State<WebDavSettingsScreen> {
   @override
   void initState() {
     super.initState();
+    // 初始化或获取MediaSyncService
+    _mediaSyncService =
+        widget.mediaSyncService ?? MediaSyncService(_webDavService);
+
     // 从本地存储加载WebDAV配置
     _loadSavedSettings();
   }
@@ -68,6 +80,18 @@ class _WebDavSettingsScreenState extends State<WebDavSettingsScreen> {
     } catch (e) {
       debugPrint('加载WebDAV设置错误: $e');
     }
+  }
+
+  // 打开WebDAV状态页面
+  void _openWebDavStatusPage() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => WebDavStatusPage(
+          mediaSyncService: _mediaSyncService,
+        ),
+      ),
+    );
   }
 
   Future<void> _testConnection() async {
@@ -165,6 +189,14 @@ class _WebDavSettingsScreenState extends State<WebDavSettingsScreen> {
       appBar: AppBar(
         title: const Text('WebDAV设置'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          // 添加查看传输状态按钮
+          IconButton(
+            icon: const Icon(Icons.sync),
+            tooltip: '查看传输状态',
+            onPressed: _openWebDavStatusPage,
+          ),
+        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
@@ -270,8 +302,8 @@ class _WebDavSettingsScreenState extends State<WebDavSettingsScreen> {
                   padding: const EdgeInsets.all(8.0),
                   decoration: BoxDecoration(
                     color: _isConnected
-                        ? Colors.green.withValues(alpha: 25)
-                        : Colors.red.withValues(alpha: 25),
+                        ? Colors.green.withOpacity(0.25)
+                        : Colors.red.withOpacity(0.25),
                     borderRadius: BorderRadius.circular(4.0),
                   ),
                   child: Text(
@@ -306,6 +338,47 @@ class _WebDavSettingsScreenState extends State<WebDavSettingsScreen> {
                 child: const Text('保存配置'),
               ),
               const SizedBox(height: 32),
+              // 添加查看传输状态卡片
+              Card(
+                elevation: 2,
+                child: InkWell(
+                  onTap: _openWebDavStatusPage,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.sync,
+                          size: 32,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                        const SizedBox(width: 16),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '查看传输状态',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                '监控当前正在进行的上传和下载任务',
+                                style: TextStyle(fontSize: 14),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.arrow_forward_ios, size: 16),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
               const ExpansionTile(
                 title: Text('高级设置'),
                 children: [

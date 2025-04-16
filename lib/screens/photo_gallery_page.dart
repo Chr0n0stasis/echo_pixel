@@ -9,6 +9,7 @@ import 'package:echo_pixel/services/media_cache_service.dart';
 import 'package:echo_pixel/services/mobile_media_scanner.dart'; // 导入移动端扫描器
 // 移除 VideoPlayerCache 引用
 import 'package:echo_pixel/services/video_thumbnail_service.dart'; // 导入视频缩略图服务
+import 'package:echo_pixel/services/preview_quality_service.dart'; // 导入预览质量服务
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, compute;
 import 'package:collection/collection.dart';
@@ -19,7 +20,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 // 导入 media_kit 相关包，仅用于视频播放页面
 import 'package:media_kit/media_kit.dart';
-import 'package:media_kit_video/media_kit_video.dart';
+import 'package:provider/provider.dart'; // 导入Provider
 
 import '../models/media_index.dart';
 import '../services/media_sync_service.dart';
@@ -1538,6 +1539,9 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
 
   // 构建媒体预览
   Widget _buildMediaPreview(MediaFileInfo mediaFile) {
+    // 获取预览质量设置服务
+    final previewQualityService = Provider.of<PreviewQualityService>(context);
+
     // 对于Web平台，暂不支持本地文件访问
     if (kIsWeb) {
       return Container(
@@ -1557,60 +1561,33 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
 
     try {
       if (mediaFile.type == MediaType.image) {
-        // 对于大图片，显示占位符
-        if (mediaFile.size > _maxThumbnailSize) {
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              Container(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest),
-              Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.photo_size_select_actual,
-                      size: 32,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '大图片',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          );
-        } else {
-          // 解决图片拉伸问题：使用Container包裹Image，设置背景色避免透明区域
-          // 同时使用BoxFit.cover确保图片保持原比例并填满容器
-          return Container(
-            color: Colors.black, // 给图片设置背景色，避免透明区域
-            child: Image.file(
-              file,
-              fit: BoxFit.cover, // 保持原始比例并填充整个容器
-              cacheWidth: 720,
-              cacheHeight: 720,
-              filterQuality: FilterQuality.high,
-              errorBuilder: (context, error, stackTrace) {
-                return Container(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  child: const Icon(Icons.broken_image),
-                );
-              },
-            ),
-          );
-        }
+        // 根据预览质量设置调整参数
+        return Container(
+          color: Colors.black, // 给图片设置背景色，避免透明区域
+          child: Image.file(
+            file,
+            fit: BoxFit.cover, // 保持原始比例并填充整个容器
+            // 根据预览质量设置调整缓存宽高
+            cacheWidth: previewQualityService.imageCacheWidth,
+            cacheHeight: previewQualityService.imageCacheHeight,
+            // 根据预览质量设置调整过滤质量
+            filterQuality: previewQualityService.imageFilterQuality,
+            errorBuilder: (context, error, stackTrace) {
+              return Container(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                child: const Icon(Icons.broken_image),
+              );
+            },
+          ),
+        );
       } else if (mediaFile.type == MediaType.video) {
-        // 解决视频缩略图拉伸问题：使用Container包裹缩略图组件
+        // 视频缩略图，传递预览质量
         return Container(
           color: Colors.black, // 给视频缩略图设置背景色
-          child: LazyLoadingVideoThumbnail(videoPath: mediaFile.originalPath),
+          child: LazyLoadingVideoThumbnail(
+            videoPath: mediaFile.originalPath,
+            previewQualityService: previewQualityService,
+          ),
         );
       } else {
         return Container(
@@ -1869,17 +1846,23 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
 
   // 打开WebDAV设置页面
   void _openWebDavSettings() async {
-    final result = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const WebDavSettingsScreen(),
-      ),
-    );
+    // 使用主页面的回调，让主页面处理WebDAV设置的导航
+    if (widget.onWebDavSettingsRequest != null) {
+      widget.onWebDavSettingsRequest!();
+    } else {
+      // 作为后备方案，直接导航到设置页面
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const WebDavSettingsScreen(),
+        ),
+      );
 
-    // 如果设置页面返回了结果，刷新WebDAV状态
-    if (result == true) {
-      // 重新初始化WebDAV服务
-      await _initializeWebDav();
+      // 如果设置页面返回了结果，刷新WebDAV状态
+      if (result == true) {
+        // 重新初始化WebDAV服务
+        await _initializeWebDav();
+      }
     }
   }
 }
@@ -1887,9 +1870,11 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
 // 懒加载视频缩略图组件 - 使用 VideoThumbnailService 生成缩略图
 class LazyLoadingVideoThumbnail extends StatefulWidget {
   final String videoPath;
+  final PreviewQualityService previewQualityService;
 
   const LazyLoadingVideoThumbnail({
     required this.videoPath,
+    required this.previewQualityService,
     super.key,
   });
 

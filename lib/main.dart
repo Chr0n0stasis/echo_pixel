@@ -1,11 +1,17 @@
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'dart:io' show Platform;
+import 'dart:io' show Platform, SecurityContext;
 import 'package:media_kit/media_kit.dart'; // 导入MediaKit
 import 'package:permission_handler/permission_handler.dart'; // 导入权限处理包
+import 'package:provider/provider.dart';
+import 'services/theme_service.dart';
+import 'services/preview_quality_service.dart'; // 导入预览质量服务
+import 'services/webdav_service.dart'; // 导入WebDAV服务
+import 'services/media_sync_service.dart'; // 导入媒体同步服务
 
 import 'screens/photo_gallery_page.dart';
+import 'screens/settings_page.dart'; // 导入新的设置页面
 
 void main() async {
   // 确保初始化Flutter绑定
@@ -14,12 +20,40 @@ void main() async {
   // 初始化MediaKit
   MediaKit.ensureInitialized();
 
+  // 初始化WebDAV服务和媒体同步服务
+  final webDavService = WebDavService();
+  final mediaSyncService = MediaSyncService(webDavService);
+
+  // 初始化其他服务
+  final themeService = ThemeService();
+  final previewQualityService = PreviewQualityService();
+
+  await Future.wait([
+    themeService.initialize(),
+    previewQualityService.initialize(),
+    mediaSyncService.initialize(), // 初始化媒体同步服务
+  ]);
+
   // 在Android平台上请求权限
   if (Platform.isAndroid) {
     await requestPermissions();
   }
 
-  runApp(const MyApp());
+  runApp(
+    // 使用Provider提供服务
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider<ThemeService>.value(value: themeService),
+        ChangeNotifierProvider<PreviewQualityService>.value(
+            value: previewQualityService),
+        // 添加MediaSyncService作为Provider
+        Provider<MediaSyncService>.value(value: mediaSyncService),
+        // 添加WebDavService作为Provider
+        Provider<WebDavService>.value(value: webDavService),
+      ],
+      child: const MyApp(),
+    ),
+  );
 }
 
 // 请求所需的权限
@@ -50,6 +84,9 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 从Provider获取ThemeService
+    final themeService = Provider.of<ThemeService>(context);
+
     return MaterialApp(
       title: 'Echo Pixel',
       theme: ThemeData(
@@ -63,7 +100,8 @@ class MyApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      themeMode: ThemeMode.system,
+      // 根据ThemeService设置主题模式
+      themeMode: themeService.themeMode,
       home: const HomeScreen(),
       debugShowCheckedModeBanner: false,
     );
@@ -115,7 +153,10 @@ class _HomeScreenState extends State<HomeScreen> {
   // WebDAV设置回调
   void _handleWebDavSettingsRequest() {
     debugPrint('主页面：收到WebDAV设置请求');
-    // 在这里可以添加任何需要在主页面处理的WebDAV设置相关逻辑
+    // 切换到设置页面
+    setState(() {
+      _selectedIndex = 3; // 设置页面的索引
+    });
   }
 
   // 刷新请求回调
@@ -135,7 +176,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _photoGalleryPage,
     const AlbumsPage(),
     const SearchPage(),
-    const SettingsPage(),
+    const SettingsPage(), // 使用新的设置页面
   ];
 
   // 底部导航项目
@@ -167,7 +208,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(
               '您的跨平台相册',
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.8),
+                color: Colors.white.withOpacity(0.8),
                 fontSize: 16,
               ),
             ),
@@ -216,7 +257,8 @@ class _HomeScreenState extends State<HomeScreen> {
         leading: const Icon(Icons.cloud_sync),
         title: const Text('WebDAV同步'),
         onTap: () {
-          // 打开WebDAV同步设置
+          // 转到设置页面
+          _onItemTapped(3);
           if (!isDesktop) Navigator.pop(context);
         },
       ),
@@ -265,23 +307,15 @@ class _HomeScreenState extends State<HomeScreen> {
               },
               icon: const Icon(Icons.sync),
             ),
-
-            // WebDAV设置按钮 - 使用控制器直接调用相册页面的功能
-            IconButton(
-              tooltip: 'WebDAV设置',
-              onPressed: () {
-                PhotoGalleryPage.controller.openWebDavSettings();
-              },
-              icon: const Icon(Icons.cloud),
-            ),
           ],
 
           // 其他页面的功能按钮
-          if (_selectedIndex != 0)
+          if (_selectedIndex != 0 && _selectedIndex != 3)
             IconButton(
               icon: const Icon(Icons.cloud_sync),
               onPressed: () {
                 // 显示同步状态或触发同步
+                PhotoGalleryPage.controller.syncWithWebDav();
               },
             ),
 
@@ -408,19 +442,6 @@ class SearchPage extends StatelessWidget {
     return const Padding(
       padding: EdgeInsets.all(16.0),
       child: Center(child: Text('搜索页面 - 这里可以搜索照片')),
-    );
-  }
-}
-
-// 设置页面
-class SettingsPage extends StatelessWidget {
-  const SettingsPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.all(16.0),
-      child: Center(child: Text('设置页面 - 这里将包含应用设置和WebDAV配置')),
     );
   }
 }

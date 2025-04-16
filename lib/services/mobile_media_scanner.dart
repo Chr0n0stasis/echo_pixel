@@ -4,7 +4,6 @@ import 'package:photo_manager/photo_manager.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart' as path_provider;
 import 'package:crypto/crypto.dart';
-import 'dart:typed_data';
 
 import '../models/media_index.dart';
 

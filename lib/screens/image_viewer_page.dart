@@ -13,11 +13,11 @@ class ImageViewerPage extends StatefulWidget {
   final int initialIndex; // 初始显示的索引
 
   const ImageViewerPage({
-    Key? key,
+    super.key,
     required this.mediaFile,
     this.mediaFiles,
     this.initialIndex = 0,
-  }) : super(key: key);
+  });
 
   @override
   State<ImageViewerPage> createState() => _ImageViewerPageState();
@@ -133,7 +133,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
           },
           itemCount: files.length,
           loadingBuilder: (context, event) => Center(
-            child: Container(
+            child: SizedBox(
               width: 20.0,
               height: 20.0,
               child: CircularProgressIndicator(

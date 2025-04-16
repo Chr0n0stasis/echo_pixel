@@ -4,7 +4,6 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
-import 'package:photo_manager/photo_manager.dart';
 import 'package:synchronized/synchronized.dart';
 
 import '../models/cloud_mapping.dart';
@@ -13,6 +12,99 @@ import '../models/media_index.dart';
 import 'webdav_service.dart';
 import 'desktop_media_scanner.dart';
 import 'mobile_media_scanner.dart'; // 添加导入MobileMediaScanner
+
+/// 传输任务状态
+enum TransferStatus {
+  pending, // 等待开始
+  inProgress, // 正在进行
+  completed, // 已完成
+  failed, // 失败
+}
+
+/// 传输任务类型
+enum TransferType {
+  upload, // 上传
+  download, // 下载
+}
+
+/// 传输任务信息
+class TransferTask {
+  final String id; // 任务ID
+  final String fileName; // 文件名
+  final String localPath; // 本地路径
+  final String remotePath; // 远程路径
+  final int fileSize; // 文件大小
+  final TransferType type; // 传输类型
+  TransferStatus status; // 传输状态
+  String? errorMessage; // 错误信息
+  DateTime startTime; // 开始时间
+  DateTime? endTime; // 结束时间
+
+  TransferTask({
+    required this.id,
+    required this.fileName,
+    required this.localPath,
+    required this.remotePath,
+    required this.fileSize,
+    required this.type,
+    required this.status,
+    this.errorMessage,
+    required this.startTime,
+    this.endTime,
+  });
+
+  // 计算传输持续时间
+  Duration get duration {
+    final end = endTime ?? DateTime.now();
+    return end.difference(startTime);
+  }
+
+  // 创建上传任务
+  static TransferTask createUploadTask(MediaMapping mapping) {
+    return TransferTask(
+      id: mapping.mediaId,
+      fileName: path.basename(mapping.localPath),
+      localPath: mapping.localPath,
+      remotePath: mapping.cloudPath,
+      fileSize: mapping.fileSize,
+      type: TransferType.upload,
+      status: TransferStatus.pending,
+      startTime: DateTime.now(),
+    );
+  }
+
+  // 创建下载任务
+  static TransferTask createDownloadTask(MediaMapping mapping) {
+    return TransferTask(
+      id: mapping.mediaId,
+      fileName: path.basename(mapping.cloudPath),
+      localPath: mapping.localPath,
+      remotePath: mapping.cloudPath,
+      fileSize: mapping.fileSize,
+      type: TransferType.download,
+      status: TransferStatus.pending,
+      startTime: DateTime.now(),
+    );
+  }
+
+  // 将任务标记为成功完成
+  void markCompleted() {
+    status = TransferStatus.completed;
+    endTime = DateTime.now();
+  }
+
+  // 将任务标记为失败
+  void markFailed(String error) {
+    status = TransferStatus.failed;
+    errorMessage = error;
+    endTime = DateTime.now();
+  }
+
+  // 将任务标记为进行中
+  void markInProgress() {
+    status = TransferStatus.inProgress;
+  }
+}
 
 /// 媒体同步服务
 /// 负责扫描本地媒体、构建索引、与云端同步
@@ -59,8 +151,35 @@ class MediaSyncService {
   /// 当前同步状态信息
   String? _syncStatusInfo;
 
+  /// 传输任务列表
+  final List<TransferTask> _transferTasks = [];
+
+  /// 当前活跃的任务列表 (正在进行的上传和下载)
+  List<TransferTask> get activeTasks => _transferTasks
+      .where((task) => task.status == TransferStatus.inProgress)
+      .toList();
+
+  /// 已完成的任务列表 (最近50个)
+  List<TransferTask> get completedTasks {
+    final completed = _transferTasks
+        .where((task) =>
+            task.status == TransferStatus.completed ||
+            task.status == TransferStatus.failed)
+        .toList();
+    completed.sort((a, b) => b.endTime!.compareTo(a.endTime!)); // 按完成时间降序排序
+    return completed.length > 50 ? completed.sublist(0, 50) : completed;
+  }
+
+  /// 排队等待的任务列表
+  List<TransferTask> get pendingTasks => _transferTasks
+      .where((task) => task.status == TransferStatus.pending)
+      .toList();
+
   /// 同步状态信息更新回调
   Function(String)? onSyncStatusUpdate;
+
+  /// 传输任务状态更新回调
+  Function(List<TransferTask>)? onTransferTasksUpdate;
 
   MediaSyncService(this._webdavService, {int maxConcurrentTasks = 5})
       : _maxConcurrentTasks = maxConcurrentTasks {
@@ -627,8 +746,15 @@ class MediaSyncService {
           onSyncStatusUpdate!("$fileName -> ${mapping.cloudPath}");
         }
 
+        // 创建上传任务
+        final uploadTask = TransferTask.createUploadTask(mapping);
+        _transferTasks.add(uploadTask);
+        _updateTransferTasks();
+
         try {
           // 尝试直接上传到云端
+          uploadTask.markInProgress();
+          _updateTransferTasks();
           await _webdavService.uploadFile(mapping.cloudPath, localFile);
         } catch (uploadError) {
           // 如果上传失败，检查是否因为目录不存在
@@ -659,12 +785,22 @@ class MediaSyncService {
           uploadProgress.value = progress;
           _syncProgress = progress;
         });
+
+        // 标记任务完成
+        uploadTask.markCompleted();
+        _updateTransferTasks();
       } catch (e) {
         // 上传错误
         debugPrint('上传文件错误：${mapping.localPath}，${e.toString()}');
         await progressLock.synchronized(() {
           updatedMappings.add(mapping.copyWithSyncStatus(SyncStatus.error));
         });
+
+        // 标记任务失败
+        final uploadTask =
+            _transferTasks.firstWhere((task) => task.id == mapping.mediaId);
+        uploadTask.markFailed(e.toString());
+        _updateTransferTasks();
       }
     }
 
@@ -724,7 +860,14 @@ class MediaSyncService {
         final localDir = path.dirname(mapping.localPath);
         await Directory(localDir).create(recursive: true);
 
+        // 创建下载任务
+        final downloadTask = TransferTask.createDownloadTask(mapping);
+        _transferTasks.add(downloadTask);
+        _updateTransferTasks();
+
         // 下载文件
+        downloadTask.markInProgress();
+        _updateTransferTasks();
         await _webdavService.downloadFile(mapping.cloudPath, mapping.localPath);
 
         // 更新状态和进度
@@ -735,12 +878,22 @@ class MediaSyncService {
           downloadProgress.value = progress;
           _syncProgress = progress;
         });
+
+        // 标记任务完成
+        downloadTask.markCompleted();
+        _updateTransferTasks();
       } catch (e) {
         // 下载错误
         debugPrint('下载文件错误：${mapping.cloudPath}，${e.toString()}');
         await progressLock.synchronized(() {
           updatedMappings.add(mapping.copyWithSyncStatus(SyncStatus.error));
         });
+
+        // 标记任务失败
+        final downloadTask =
+            _transferTasks.firstWhere((task) => task.id == mapping.mediaId);
+        downloadTask.markFailed(e.toString());
+        _updateTransferTasks();
       }
     }
 
@@ -815,6 +968,13 @@ class MediaSyncService {
 
     if (onSyncStatusUpdate != null) {
       onSyncStatusUpdate!('已导入 ${indices.length} 个媒体分组，无需重新扫描');
+    }
+  }
+
+  /// 更新传输任务列表
+  void _updateTransferTasks() {
+    if (onTransferTasksUpdate != null) {
+      onTransferTasksUpdate!(_transferTasks);
     }
   }
 }

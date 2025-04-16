@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:flutter/rendering.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart'; // 添加这个导入
 
 class WebDavService {
   String? _serverUrl;
@@ -10,9 +11,27 @@ class WebDavService {
   String _uploadRootPath = '/';
   bool _isConnected = false;
 
+  // 持久化的HttpClient和IOClient
+  late HttpClient _httpClient;
+  late IOClient _client;
+
   bool get isConnected => _isConnected;
   String? get serverUrl => _serverUrl;
   String get uploadRootPath => _uploadRootPath;
+
+  // 构造函数中初始化持久化客户端
+  WebDavService() {
+    final context = SecurityContext.defaultContext;
+    context.allowLegacyUnsafeRenegotiation = true;
+    _httpClient = HttpClient(context: context);
+    _client = IOClient(_httpClient);
+  }
+
+  // 释放资源
+  void dispose() {
+    _client.close();
+    _httpClient.close();
+  }
 
   // 初始化WebDAV连接
   Future<bool> initialize(
@@ -208,16 +227,34 @@ class WebDavService {
       requestHeaders['Authorization'] = auth;
     }
 
-    final request = http.Request(method, uri);
-    request.headers.addAll(requestHeaders);
-
-    if (body != null) {
-      request.bodyBytes =
-          body is List<int> ? body : utf8.encode(body.toString());
+    // 根据HTTP方法发送请求
+    http.Response response;
+    switch (method) {
+      case 'GET':
+        response = await _client.get(uri, headers: requestHeaders);
+        break;
+      case 'PUT':
+        response = await _client.put(uri, headers: requestHeaders, body: body);
+        break;
+      case 'DELETE':
+        response = await _client.delete(uri, headers: requestHeaders);
+        break;
+      case 'POST':
+        response = await _client.post(uri, headers: requestHeaders, body: body);
+        break;
+      default:
+        // 对于自定义方法(如PROPFIND, MKCOL等)使用send方法
+        final request = http.Request(method, uri);
+        request.headers.addAll(requestHeaders);
+        if (body != null) {
+          request.bodyBytes =
+              body is List<int> ? body : utf8.encode(body.toString());
+        }
+        final streamedResponse = await _client.send(request);
+        response = await http.Response.fromStream(streamedResponse);
     }
 
-    final streamedResponse = await request.send();
-    return http.Response.fromStream(streamedResponse);
+    return response;
   }
 
   // 解析WebDAV目录列表响应
