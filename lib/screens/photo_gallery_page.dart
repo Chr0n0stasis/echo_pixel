@@ -26,6 +26,7 @@ import '../models/media_index.dart';
 import '../services/media_sync_service.dart';
 import '../services/webdav_service.dart';
 import '../services/desktop_media_scanner.dart'; // 导入桌面端扫描器
+import '../services/media_index_service.dart';
 
 class PhotoGalleryPage extends StatefulWidget {
   final Function()? onSyncRequest; // 同步请求回调
@@ -355,286 +356,29 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
     _isScanning = true;
     debugPrint('开始增量扫描媒体文件...');
 
-    try {
-      // 创建已存在媒体文件的索引映射（用于快速查找）
-      final Map<String, bool> existingFilePaths = {};
-      final Map<String, DateTime> existingFileModTimes = {};
+    // 使用MediaIndexService进行增量扫描
+    final mediaIndexService =
+        Provider.of<MediaIndexService>(context, listen: false);
+    final bool success = await mediaIndexService.tryIncrementalScan();
 
-      // 收集所有现有文件路径和修改时间
-      for (final index in _sortedIndices) {
-        for (final file in index.mediaFiles) {
-          existingFilePaths[file.originalPath] = true;
-          existingFileModTimes[file.originalPath] = file.modifiedAt;
-        }
-      }
+    if (success && mounted) {
+      // 增量扫描成功，从MediaIndexService获取数据
+      final indices = mediaIndexService.indices.values.toList();
 
-      List<Directory> foldersToScan = [];
-
-      // 根据平台添加要扫描的目录
-      if (Platform.isAndroid) {
-        // Android平台使用PhotoManager增量扫描
-        await _incrementalAndroidScan();
-      } else {
-        // 添加系统标准媒体目录
-        final String homeDir = _getUserHomeDirectory();
-
-        if (Platform.isWindows) {
-          final Directory picturesDir =
-              Directory(path.join(homeDir, 'Pictures'));
-          final Directory videosDir = Directory(path.join(homeDir, 'Videos'));
-
-          if (await picturesDir.exists()) foldersToScan.add(picturesDir);
-          if (await videosDir.exists()) foldersToScan.add(videosDir);
-        } else if (Platform.isMacOS || Platform.isLinux) {
-          final Directory picturesDir =
-              Directory(path.join(homeDir, 'Pictures'));
-          final Directory videosDir = Directory(path.join(homeDir, 'Movies'));
-
-          if (await picturesDir.exists()) foldersToScan.add(picturesDir);
-          if (await videosDir.exists()) foldersToScan.add(videosDir);
-        }
-
-        // 对每个目录进行快速扫描
-        for (final dir in foldersToScan) {
-          await _scanFolderIncrementally(
-              dir, existingFilePaths, existingFileModTimes);
-        }
-      }
-
-      // 保存更新后的缓存
-      await _saveToCache();
-
-      debugPrint('增量扫描完成，媒体索引已更新');
-    } catch (e) {
-      debugPrint('增量扫描错误: $e');
-    } finally {
-      _isScanning = false;
-    }
-  }
-
-  // 增量扫描文件夹，只处理新文件或修改过的文件
-  Future<void> _scanFolderIncrementally(
-      Directory folder,
-      Map<String, bool> existingPaths,
-      Map<String, DateTime> existingModTimes) async {
-    try {
-      // 使用更优化的方式扫描目录
-      final fileQueue = <FileSystemEntity>[];
-      final folders = <Directory>[folder];
-
-      // 使用广度优先遍历
-      while (folders.isNotEmpty) {
-        final currentDir = folders.removeAt(0);
-
-        try {
-          final entities = await currentDir.list().toList();
-
-          for (final entity in entities) {
-            if (entity is Directory) {
-              // 跳过隐藏文件夹
-              if (!path.basename(entity.path).startsWith('.')) {
-                folders.add(entity);
-              }
-            } else if (entity is File) {
-              // 检查是否为媒体文件
-              final extension = path.extension(entity.path).toLowerCase();
-              final ext = extension.replaceAll('.', '');
-
-              if (MediaFileInfo.isImageExtension(ext) ||
-                  MediaFileInfo.isVideoExtension(ext)) {
-                // 检查文件是否已存在
-                if (!existingPaths.containsKey(entity.path)) {
-                  // 新文件，需要处理
-                  fileQueue.add(entity);
-                } else {
-                  // 检查文件是否被修改
-                  final stat = await entity.stat();
-                  final lastModified = stat.modified;
-                  final existingModTime = existingModTimes[entity.path];
-
-                  if (existingModTime != null &&
-                      lastModified.isAfter(existingModTime)) {
-                    // 文件已修改，需要重新处理
-                    fileQueue.add(entity);
-                  }
-                }
-              }
-            }
-          }
-        } catch (e) {
-          debugPrint('扫描目录出错: ${currentDir.path}: $e');
-        }
-      }
-
-      // 处理发现的新文件或修改的文件
-      int processed = 0;
-      for (final file in fileQueue) {
-        if (file is File) {
-          await _processMediaFile(file);
-          processed++;
-
-          // 每处理20个文件，重新排序索引
-          if (processed % 20 == 0) {
-            _reorganizeIndices();
-          }
-        }
-      }
-
-      if (processed > 0) {
-        debugPrint('增量扫描处理了 $processed 个新的或已修改的媒体文件');
+      setState(() {
+        _sortedIndices.clear();
+        _sortedIndices.addAll(indices);
         _reorganizeIndices();
-      }
-    } catch (e) {
-      debugPrint('增量扫描目录错误: ${folder.path}, $e');
-    }
-  }
-
-  // Android增量扫描
-  Future<void> _incrementalAndroidScan() async {
-    try {
-      if (_isScanning) {
-        debugPrint('已有扫描任务在进行，跳过增量扫描');
-        return;
-      }
-
-      setState(() {
-        _isScanning = true;
-        _currentScanInfo = "正在进行增量扫描...";
-        _scanProgress = 0;
+        _isScanning = false;
+        _currentScanInfo = "增量扫描完成";
       });
-
-      // 获取上次扫描时间
-      final lastScanTime = _mediaCacheService.lastScanTime;
-      if (lastScanTime == null) {
-        debugPrint('没有上次扫描时间记录，无法进行增量扫描');
-        setState(() {
-          _isScanning = false;
-        });
-        return;
-      }
-
-      // 创建已存在媒体文件的ID集合（用于快速查找）
-      final Set<String> existingIds = {};
-      for (final index in _sortedIndices) {
-        for (final file in index.mediaFiles) {
-          existingIds.add(file.id);
-        }
-      }
-
-      // 启动扫描进度更新定时器
-      _scanProgressTimer?.cancel();
-      _scanProgressTimer =
-          Timer.periodic(const Duration(milliseconds: 500), (timer) {
-        if (mounted && _isScanning) {
-          setState(() {
-            _scanProgress = _mobileScanner.scanProgress;
-          });
-        } else {
-          timer.cancel();
-        }
-      });
-
-      // 使用移动端扫描器执行增量扫描，在单独的隔离进程中执行
-      final Map<String, MediaIndex> newIndices =
-          await _mobileScanner.incrementalScan(lastScanTime, existingIds);
-
-      // 处理扫描结果
-      if (newIndices.isNotEmpty) {
-        _handleScanResults(newIndices);
-        debugPrint('增量扫描处理了 ${newIndices.length} 个日期组的新媒体文件');
-
-        // 保存更新后的缓存
-        await _saveToCache();
-      }
-
+    } else {
       setState(() {
         _isScanning = false;
-        _currentScanInfo = newIndices.isEmpty
-            ? "增量扫描完成，没有发现新文件"
-            : "增量扫描完成，发现 ${_countNewFiles(newIndices)} 个新文件";
+        if (!success && mediaIndexService.scanError != null) {
+          _scanError = mediaIndexService.scanError;
+        }
       });
-
-      // 取消定时器
-      _scanProgressTimer?.cancel();
-      _scanProgressTimer = null;
-    } catch (e) {
-      debugPrint('Android增量扫描错误: $e');
-      setState(() {
-        _isScanning = false;
-        _scanError = '增量扫描出错: $e';
-      });
-
-      // 取消定时器
-      _scanProgressTimer?.cancel();
-      _scanProgressTimer = null;
-    }
-  }
-
-  // 计算新索引中的媒体文件总数
-  int _countNewFiles(Map<String, MediaIndex> indices) {
-    int count = 0;
-    for (final index in indices.values) {
-      count += index.mediaFiles.length;
-    }
-    return count;
-  }
-
-  // 开始完整加载流程
-  Future<void> _startFullLoading({bool showLoadingIndicator = true}) async {
-    try {
-      if (showLoadingIndicator) {
-        setState(() {
-          _isLoading = true;
-          _errorMsg = null;
-          _loadProgress = 0.0;
-        });
-      }
-
-      // 确保媒体服务已初始化
-      if (!_isMediaServiceInitialized) {
-        await _mediaSyncService.initialize();
-        setState(() {
-          _isMediaServiceInitialized = true;
-        });
-      }
-
-      // 清空已有的媒体索引
-      _sortedIndices.clear();
-      _pendingFolders.clear();
-      _pendingFiles.clear();
-
-      // 获取要扫描的目录
-      await _initializeScanning();
-
-      // 开始增量加载（第一批）
-      await _loadNextBatch();
-
-      // 保存到缓存
-      await _saveToCache();
-
-      // 标记初始加载完成
-      if (showLoadingIndicator) {
-        setState(() {
-          _isLoading = false;
-        });
-      } else {
-        setState(() {
-          _isCacheLoaded = true;
-        });
-      }
-
-      // 如果还有更多待处理的文件，继续在背景中加载
-      if (_pendingFiles.isNotEmpty || _pendingFolders.isNotEmpty) {
-        _loadMoreInBackground();
-      }
-    } catch (e) {
-      debugPrint('加载媒体文件时出错: $e');
-      if (showLoadingIndicator) {
-        setState(() {
-          _errorMsg = '加载媒体文件时出错: $e';
-          _isLoading = false;
-        });
-      }
     }
   }
 
@@ -650,6 +394,9 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
       // 保存到缓存
       final success = await _mediaCacheService.saveIndicesToCache(indicesMap);
       debugPrint('媒体索引${success ? '已' : '未'}保存到缓存');
+
+      // 同时更新媒体索引服务
+      _updateMediaIndexService();
     } catch (e) {
       debugPrint('保存媒体索引到缓存失败: $e');
     }
@@ -667,300 +414,72 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
     }
   }
 
-  // 初始化必要的服务
-  Future<void> _initializeServices() async {
+  // 开始完整加载流程
+  Future<void> _startFullLoading({bool showLoadingIndicator = true}) async {
     try {
-      // 初始化WebDAV服务（如果有保存的配置）
-      await _initializeWebDav();
-
-      // 初始化媒体同步服务
-      await _mediaSyncService.initialize();
-
-      // 标记媒体服务初始化完成
-      setState(() {
-        _isMediaServiceInitialized = true;
-      });
-
-      debugPrint('媒体服务初始化完成');
-    } catch (e) {
-      debugPrint('初始化服务错误: $e');
-    }
-  }
-
-  // 初始化扫描，获取要扫描的目录和文件
-  Future<void> _initializeScanning() async {
-    // 清空旧的待处理队列
-    _pendingFolders.clear();
-    _pendingFiles.clear();
-
-    if (Platform.isAndroid) {
-      // Android 平台特殊处理
-      try {
-        debugPrint("Android设备: 开始获取媒体资源");
-
-        // 请求权限
-        final PermissionState result =
-            await PhotoManager.requestPermissionExtend();
-        if (!result.isAuth) {
-          debugPrint("Android设备: 权限未授予，状态: ${result.toString()}");
-          throw Exception('没有获得访问相册的权限，请在设置中开启存储权限');
-        }
-
-        debugPrint("Android设备: 权限已授予，开始获取相册列表");
-
-        // 直接加载媒体文件而不是目录
-        await _loadAndroidMediaWithPhotoManager();
-        return;
-      } catch (e) {
-        debugPrint('Android媒体目录初始化错误: $e');
-        throw Exception('初始化Android媒体目录失败: $e');
-      }
-    } else if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
-      // 桌面平台处理 - 使用DesktopMediaScanner
-      try {
+      if (showLoadingIndicator) {
         setState(() {
-          _isScanning = true;
-          _currentScanInfo = "正在扫描桌面媒体文件...";
-          _scanProgress = 0;
+          _isLoading = true;
+          _errorMsg = null;
+          _loadProgress = 0.0;
         });
-
-        // 启动扫描进度更新定时器
-        _scanProgressTimer?.cancel();
-        _scanProgressTimer =
-            Timer.periodic(const Duration(milliseconds: 500), (timer) {
-          if (mounted && _isScanning) {
-            setState(() {
-              _scanProgress = _desktopScanner.scanProgress;
-              _loadProgress = _scanProgress / 100;
-            });
-          } else {
-            timer.cancel();
-          }
-        });
-
-        // 使用桌面媒体扫描器执行扫描
-        final Map<String, MediaIndex> indices =
-            await _desktopScanner.scanDesktopMedia();
-
-        // 处理扫描结果
-        _handleScanResults(indices);
-
-        setState(() {
-          _isScanning = false;
-          _currentScanInfo = "扫描完成，发现 ${_countNewFiles(indices)} 个媒体文件";
-        });
-
-        // 取消定时器
-        _scanProgressTimer?.cancel();
-        _scanProgressTimer = null;
-
-        return;
-      } catch (e) {
-        debugPrint('桌面平台媒体扫描错误: $e');
-        setState(() {
-          _isScanning = false;
-          _scanError = '扫描桌面媒体出错: $e';
-        });
-
-        // 取消定时器
-        _scanProgressTimer?.cancel();
-        _scanProgressTimer = null;
-
-        throw Exception('初始化桌面媒体目录失败: $e');
-      }
-    } else if (Platform.isIOS) {
-      // iOS 平台
-      try {
-        await _loadIOSMediaWithPhotoManager();
-        return;
-      } catch (e) {
-        debugPrint('iOS媒体初始化错误: $e');
-        throw Exception('初始化媒体目录失败: $e');
-      }
-    } else {
-      throw Exception('不支持的平台');
-    }
-  }
-
-  // 使用 PhotoManager 加载 Android 媒体文件
-  Future<void> _loadAndroidMediaWithPhotoManager() async {
-    try {
-      setState(() {
-        _isScanning = true;
-        _currentScanInfo = "正在扫描媒体库...";
-        _scanProgress = 0;
-      });
-
-      // 启动扫描进度更新定时器
-      _scanProgressTimer?.cancel();
-      _scanProgressTimer =
-          Timer.periodic(const Duration(milliseconds: 500), (timer) {
-        if (mounted && _isScanning) {
-          setState(() {
-            _scanProgress = _mobileScanner.scanProgress;
-            _loadProgress = _scanProgress / 100;
-          });
-        } else {
-          timer.cancel();
-        }
-      });
-
-      // 使用移动端扫描器执行扫描
-      // 扫描器会通过回调函数更新UI和处理结果，不会阻塞UI线程
-      await _mobileScanner.scanMobileMedia();
-
-      // 扫描完成后的处理在回调函数中进行，这里不需要额外操作
-    } catch (e) {
-      debugPrint('加载移动端媒体错误: $e');
-      setState(() {
-        _errorMsg = '扫描媒体库出错: $e';
-        _isScanning = false;
-      });
-
-      // 取消定时器
-      _scanProgressTimer?.cancel();
-      _scanProgressTimer = null;
-
-      rethrow;
-    }
-  }
-
-  // 为iOS/macOS加载媒体
-  Future<void> _loadIOSMediaWithPhotoManager() async {
-    // iOS的实现与Android类似
-    await _loadAndroidMediaWithPhotoManager();
-  }
-
-  // 处理单个Android媒体资源
-  Future<void> _processAndroidAsset(AssetEntity asset) async {
-    try {
-      // 获取媒体文件
-      final File? mediaFile = await asset.file;
-      if (mediaFile == null) {
-        debugPrint('无法获取媒体文件: ${asset.id}');
-        return;
       }
 
-      final String originalPath = mediaFile.path;
-      final String nameWithoutExt = path.basenameWithoutExtension(originalPath);
-      final String extension =
-          path.extension(originalPath).replaceAll('.', '').toLowerCase();
+      // 使用MediaIndexService代替直接扫描
+      final mediaIndexService =
+          Provider.of<MediaIndexService>(context, listen: false);
 
-      // 确定媒体类型
-      MediaType mediaType;
-      if (asset.type == AssetType.image) {
-        mediaType = MediaType.image;
-      } else if (asset.type == AssetType.video) {
-        mediaType = MediaType.video;
-      } else {
-        mediaType = MediaType.unknown;
-        return; // 跳过未知类型
-      }
+      // 开始扫描媒体文件
+      final bool scanSuccess = await mediaIndexService.scanMedia();
 
-      // 生成唯一ID (对于Android资产，我们使用资产ID作为唯一标识)
-      final String mediaId = asset.id;
-
-      // 创建分辨率信息
-      final MediaResolution resolution = MediaResolution(
-        width: asset.width,
-        height: asset.height,
-      );
-
-      // 获取文件大小
-      final int fileSize = await mediaFile.length();
-
-      // 获取日期路径
-      final String datePath = MediaIndex.getDatePath(asset.createDateTime);
-
-      // 创建媒体文件信息对象
-      final MediaFileInfo mediaInfo = MediaFileInfo(
-        id: mediaId,
-        originalPath: originalPath,
-        name: nameWithoutExt,
-        extension: extension,
-        size: fileSize,
-        type: mediaType,
-        createdAt: asset.createDateTime,
-        modifiedAt: asset.modifiedDateTime ?? asset.createDateTime,
-        resolution: resolution,
-        duration: asset.type == AssetType.video ? asset.videoDuration : null,
-      );
-
+      // 扫描完成后，更新UI状态
       if (mounted) {
         setState(() {
-          // 将媒体文件添加到日期索引中
-          final existingIndex = _sortedIndices.firstWhereOrNull(
-            (index) => index.datePath == datePath,
-          );
-
-          if (existingIndex != null) {
-            // 检查是否已经存在相同ID的媒体
-            final exists = existingIndex.mediaFiles.any(
-              (file) => file.id == mediaId,
-            );
-            if (!exists) {
-              existingIndex.mediaFiles.add(mediaInfo);
-            }
-          } else {
-            // 创建新的日期索引
-            final newIndex = MediaIndex(
-              datePath: datePath,
-              mediaFiles: [mediaInfo],
-            );
-            _sortedIndices.add(newIndex);
-          }
+          _isLoading = false;
         });
+
+        // 如果扫描失败，显示错误信息
+        if (!scanSuccess && mediaIndexService.scanError != null) {
+          setState(() {
+            _errorMsg = '扫描媒体失败: ${mediaIndexService.scanError}';
+          });
+        } else {
+          // 扫描成功，从MediaIndexService获取数据
+          final indices = mediaIndexService.indices.values.toList();
+
+          setState(() {
+            _sortedIndices.clear();
+            _sortedIndices.addAll(indices);
+            _reorganizeIndices();
+          });
+        }
       }
     } catch (e) {
-      debugPrint('处理Android媒体资源错误: $e');
+      debugPrint('加载媒体文件时出错: $e');
+      if (showLoadingIndicator && mounted) {
+        setState(() {
+          _errorMsg = '加载媒体文件时出错: $e';
+          _isLoading = false;
+        });
+      }
     }
   }
 
-  // 添加 Android 标准媒体目录
-  Future<bool> _addAndroidMediaDirectories() async {
-    bool foundDirectory = false;
-    final externalStorageDirs = await Directory('/storage/emulated/0').exists()
-        ? [Directory('/storage/emulated/0')]
-        : await getExternalStorageDirectories();
-
-    if (externalStorageDirs == null || externalStorageDirs.isEmpty) {
-      return false;
+  // 在后台继续加载更多文件
+  Future<void> _loadMoreInBackground() async {
+    // 如果已经没有待处理项，或者已经在加载中，直接返回
+    if ((_pendingFolders.isEmpty && _pendingFiles.isEmpty) || _isLoadingMore) {
+      return;
     }
 
-    for (final dir in externalStorageDirs) {
-      // 添加常见的 Android 媒体目录
-      final dcimDir = Directory(path.join(dir.path, 'DCIM'));
-      final picturesDir = Directory(path.join(dir.path, 'Pictures'));
-      final cameraDir = Directory(path.join(dir.path, 'DCIM', 'Camera'));
+    // 加载下一批
+    await _loadNextBatch();
 
-      if (await dcimDir.exists()) {
-        _pendingFolders.add(dcimDir);
-        foundDirectory = true;
-        debugPrint('已添加 Android DCIM 目录: ${dcimDir.path}');
-      }
-
-      if (await picturesDir.exists()) {
-        _pendingFolders.add(picturesDir);
-        foundDirectory = true;
-        debugPrint('已添加 Android Pictures 目录: ${picturesDir.path}');
-      }
-
-      if (await cameraDir.exists()) {
-        _pendingFolders.add(cameraDir);
-        foundDirectory = true;
-        debugPrint('已添加 Android Camera 目录: ${cameraDir.path}');
-      }
-    }
-
-    return foundDirectory;
-  }
-
-  // 获取用户主目录
-  String _getUserHomeDirectory() {
-    if (Platform.isWindows) {
-      return Platform.environment['USERPROFILE'] ?? '';
-    } else {
-      return Platform.environment['HOME'] ?? '';
+    // 如果还有更多，延迟一小段时间后继续加载（给UI留出响应时间）
+    if (_pendingFolders.isNotEmpty || _pendingFiles.isNotEmpty) {
+      await Future.delayed(const Duration(milliseconds: 200));
+      // 递归调用继续加载
+      _loadMoreInBackground();
     }
   }
 
@@ -1028,24 +547,6 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
         final totalProcessed = 100 - totalPending.clamp(0, 100);
         _loadProgress = totalProcessed / 100;
       });
-    }
-  }
-
-  // 在后台继续加载更多文件
-  Future<void> _loadMoreInBackground() async {
-    // 如果已经没有待处理项，或者已经在加载中，直接返回
-    if ((_pendingFolders.isEmpty && _pendingFiles.isEmpty) || _isLoadingMore) {
-      return;
-    }
-
-    // 加载下一批
-    await _loadNextBatch();
-
-    // 如果还有更多，延迟一小段时间后继续加载（给UI留出响应时间）
-    if (_pendingFolders.isNotEmpty || _pendingFiles.isNotEmpty) {
-      await Future.delayed(const Duration(milliseconds: 200));
-      // 递归调用继续加载
-      _loadMoreInBackground();
     }
   }
 
@@ -1863,6 +1364,27 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
         // 重新初始化WebDAV服务
         await _initializeWebDav();
       }
+    }
+  }
+
+  // 在_saveToCache方法后添加方法，更新媒体索引服务
+  Future<void> _updateMediaIndexService() async {
+    try {
+      // 使用Provider获取媒体索引服务实例
+      final mediaIndexService =
+          Provider.of<MediaIndexService>(context, listen: false);
+
+      // 将列表转换为Map
+      final Map<String, MediaIndex> indicesMap = {};
+      for (final index in _sortedIndices) {
+        indicesMap[index.datePath] = index;
+      }
+
+      // 更新媒体索引服务
+      mediaIndexService.updateIndices(indicesMap);
+      debugPrint('媒体索引已同步到MediaIndexService');
+    } catch (e) {
+      debugPrint('更新媒体索引服务失败: $e');
     }
   }
 }

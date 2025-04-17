@@ -10,9 +10,9 @@ class WebDavStatusPage extends StatefulWidget {
   final MediaSyncService mediaSyncService;
 
   const WebDavStatusPage({
-    Key? key,
+    super.key,
     required this.mediaSyncService,
-  }) : super(key: key);
+  });
 
   @override
   State<WebDavStatusPage> createState() => _WebDavStatusPageState();
@@ -266,13 +266,13 @@ class _TaskListItem extends StatelessWidget {
       final duration = task.duration;
       final minutes = duration.inMinutes;
       final seconds = duration.inSeconds % 60;
-      durationText = '$minutes分${seconds}秒';
+      durationText = '$minutes分$seconds秒';
     } else if (task.status == TransferStatus.completed ||
         task.status == TransferStatus.failed) {
       final duration = task.duration;
       final minutes = duration.inMinutes;
       final seconds = duration.inSeconds % 60;
-      durationText = '$minutes分${seconds}秒';
+      durationText = '$minutes分$seconds秒';
     }
 
     final bool isUpload = task.type == TransferType.upload;

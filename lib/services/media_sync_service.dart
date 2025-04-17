@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'dart:convert';
 import 'dart:math';
+import 'package:echo_pixel/models/photo_model.dart';
+import 'package:echo_pixel/services/album_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -634,6 +636,10 @@ class MediaSyncService {
 
     if (newMappings.isEmpty) return;
 
+    // 跟踪需要添加到云相册的媒体ID
+    final Map<String, List<String>> cloudAlbumMediaIds = {};
+    int totalPendingDownloads = 0;
+
     // 标记为需要下载
     for (final mapping in newMappings) {
       // 创建本地路径（在应用专属目录）
@@ -657,11 +663,58 @@ class MediaSyncService {
       );
 
       _cloudMapping!.addOrUpdateMapping(newMapping);
+      totalPendingDownloads++;
+
+      // 将媒体按日期分组，为了后续创建云相册
+      final dateKey = MediaIndex.getDatePath(mapping.createdAt);
+      cloudAlbumMediaIds.putIfAbsent(dateKey, () => []).add(mapping.mediaId);
     }
 
     // 保存更新后的映射表
     await _saveCloudMapping();
     debugPrint('已合并${newMappings.length}个新媒体文件的映射');
+
+    // 同步云相册信息
+    if (cloudAlbumMediaIds.isNotEmpty) {
+      await _syncCloudAlbums(cloudAlbumMediaIds, totalPendingDownloads);
+    }
+  }
+
+  /// 同步云相册信息
+  Future<void> _syncCloudAlbums(Map<String, List<String>> cloudAlbumMediaIds,
+      int totalPendingDownloads) async {
+    try {
+      // 获取AlbumService实例
+      final albumService = AlbumService();
+
+      // 获取所有现有的云相册
+      final existingCloudAlbums = albumService.cloudAlbums;
+
+      // 遍历日期分组创建或更新云相册
+      for (final dateKey in cloudAlbumMediaIds.keys) {
+        final mediaIds = cloudAlbumMediaIds[dateKey]!;
+        if (mediaIds.isEmpty) continue;
+
+        // 检查是否已有同名云相册
+        final albumName = "云相册 - $dateKey";
+        final existingAlbum = existingCloudAlbums.firstWhere(
+            (album) => album.name == albumName,
+            orElse: () => null as Album);
+
+        // 更新现有相册
+        final updatedPhotoIds = Set<String>.from(existingAlbum.photoIds)
+          ..addAll(mediaIds);
+
+        await albumService.updateAlbum(existingAlbum.copyWith(
+          photoIds: updatedPhotoIds.toList(),
+          pendingCloudPhotosCount:
+              (existingAlbum.pendingCloudPhotosCount ?? 0) + mediaIds.length,
+          isSynced: false, // 标记为未同步
+        ));
+      }
+    } catch (e) {
+      debugPrint('同步云相册信息错误: $e');
+    }
   }
 
   /// 确保云端目录结构存在 - 仅创建必要的根目录
@@ -969,6 +1022,19 @@ class MediaSyncService {
     if (onSyncStatusUpdate != null) {
       onSyncStatusUpdate!('已导入 ${indices.length} 个媒体分组，无需重新扫描');
     }
+  }
+
+  /// 获取云端媒体映射
+  Future<CloudMediaMapping?> getCloudMappings() async {
+    if (!_initialized) {
+      try {
+        await initialize();
+      } catch (e) {
+        debugPrint('初始化MediaSyncService失败: $e');
+        return null;
+      }
+    }
+    return _cloudMapping;
   }
 
   /// 更新传输任务列表

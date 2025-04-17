@@ -15,17 +15,25 @@ class WebDavService {
   late HttpClient _httpClient;
   late IOClient _client;
 
-  bool get isConnected => _isConnected;
-  String? get serverUrl => _serverUrl;
-  String get uploadRootPath => _uploadRootPath;
+  // 单例实现
+  static final WebDavService _instance = WebDavService._internal();
 
-  // 构造函数中初始化持久化客户端
-  WebDavService() {
+  // 工厂构造函数，返回单例实例
+  factory WebDavService() {
+    return _instance;
+  }
+
+  // 内部私有构造函数
+  WebDavService._internal() {
     final context = SecurityContext.defaultContext;
     context.allowLegacyUnsafeRenegotiation = true;
     _httpClient = HttpClient(context: context);
     _client = IOClient(_httpClient);
   }
+
+  bool get isConnected => _isConnected;
+  String? get serverUrl => _serverUrl;
+  String get uploadRootPath => _uploadRootPath;
 
   // 释放资源
   void dispose() {

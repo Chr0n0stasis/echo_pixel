@@ -8,9 +8,9 @@ class WebDavSettingsScreen extends StatefulWidget {
   final MediaSyncService? mediaSyncService;
 
   const WebDavSettingsScreen({
-    Key? key,
+    super.key,
     this.mediaSyncService,
-  }) : super(key: key);
+  });
 
   @override
   State<WebDavSettingsScreen> createState() => _WebDavSettingsScreenState();

@@ -390,7 +390,8 @@ class StorageItem extends StatelessWidget {
                 Text(title),
                 LinearProgressIndicator(
                   value: size > 0 ? size / (size * 2) : 0,
-                  backgroundColor: Theme.of(context).colorScheme.surfaceVariant,
+                  backgroundColor:
+                      Theme.of(context).colorScheme.surfaceContainerHighest,
                 ),
               ],
             ),
