@@ -31,8 +31,8 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
     try {
       // 获取应用缓存目录
       final cacheDir = await getTemporaryDirectory();
-      // 获取应用文档目录
-      final appDocDir = await getApplicationDocumentsDirectory();
+      // 获取应用文档目录 - 此处不再使用appDocDir变量，直接删除不需要的代码
+      // await getApplicationDocumentsDirectory();
 
       // 计算缩略图缓存大小（假设存储在缓存目录下的thumbnails文件夹中）
       final thumbnailDir = Directory('${cacheDir.path}/thumbnails');
@@ -54,14 +54,18 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
       _totalStorageUsed =
           _thumbnailCacheSize + _mediaCacheSize + _otherCacheSize;
 
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     } catch (e) {
       debugPrint('计算存储使用量时出错: $e');
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -157,16 +161,21 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
       // 重新计算存储使用量
       await _calculateStorageUsage();
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已清除${_getCacheTypeName(type)}缓存')),
-      );
+      // 确保在显示SnackBar前检查组件是否仍在widget树中
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已清除${_getCacheTypeName(type)}缓存')),
+        );
+      }
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('清除缓存失败: $e')),
-      );
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('清除缓存失败: $e')),
+        );
+      }
     }
   }
 

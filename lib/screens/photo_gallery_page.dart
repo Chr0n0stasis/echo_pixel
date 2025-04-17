@@ -6,26 +6,20 @@ import 'package:echo_pixel/screens/image_viewer_page.dart';
 import 'package:echo_pixel/screens/video_player_page.dart';
 import 'package:echo_pixel/screens/webdav_settings.dart';
 import 'package:echo_pixel/services/media_cache_service.dart';
-import 'package:echo_pixel/services/mobile_media_scanner.dart'; // 导入移动端扫描器
-// 移除 VideoPlayerCache 引用
-import 'package:echo_pixel/services/video_thumbnail_service.dart'; // 导入视频缩略图服务
-import 'package:echo_pixel/services/preview_quality_service.dart'; // 导入预览质量服务
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, compute;
 import 'package:collection/collection.dart';
 import 'package:path/path.dart' as path;
 import 'package:crypto/crypto.dart' as crypto;
-import 'package:photo_manager/photo_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:path_provider/path_provider.dart';
-// 导入 media_kit 相关包，仅用于视频播放页面
 import 'package:media_kit/media_kit.dart';
-import 'package:provider/provider.dart'; // 导入Provider
+import 'package:provider/provider.dart';
 
 import '../models/media_index.dart';
 import '../services/media_sync_service.dart';
 import '../services/webdav_service.dart';
-import '../services/desktop_media_scanner.dart'; // 导入桌面端扫描器
+import '../services/video_thumbnail_service.dart';
+import '../services/preview_quality_service.dart';
 import '../services/media_index_service.dart';
 
 class PhotoGalleryPage extends StatefulWidget {
@@ -91,13 +85,6 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
   final WebDavService _webdavService = WebDavService();
   late final MediaSyncService _mediaSyncService;
 
-  // 移动端扫描器
-  late final MobileMediaScanner _mobileScanner;
-
-  // 桌面端扫描器
-  // 注意：目前桌面端扫描器未使用，未来实现桌面端扫描时会用到
-  late final DesktopMediaScanner _desktopScanner;
-
   // 视频缩略图缓存
   final Map<String, Uint8List?> _videoThumbnailCache = {};
 
@@ -106,9 +93,6 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
 
   // 同步进度定时器
   Timer? _syncProgressTimer;
-
-  // 扫描进度定时器
-  Timer? _scanProgressTimer;
 
   // 媒体服务初始化状态
   bool _isMediaServiceInitialized = false;
@@ -201,34 +185,6 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
     PhotoGalleryPage.controller._registerState(this);
 
     _mediaSyncService = MediaSyncService(_webdavService);
-
-    // 初始化移动端扫描器
-    _mobileScanner = MobileMediaScanner(onProgressUpdate: (progress) {
-      if (mounted) {
-        setState(() {
-          _scanProgress = progress;
-        });
-      }
-    }, onScanComplete: (indices) {
-      if (mounted) {
-        setState(() {
-          // 处理扫描结果
-          _handleScanResults(indices);
-          _isScanning = false;
-          _currentScanInfo = "扫描完成，发现 ${indices.length} 个媒体分组";
-        });
-      }
-    }, onScanError: (error) {
-      if (mounted) {
-        setState(() {
-          _scanError = error;
-          _isScanning = false;
-        });
-      }
-    });
-
-    // 初始化桌面端扫描器
-    _desktopScanner = DesktopMediaScanner();
 
     // 立即尝试从缓存加载
     _loadFromCacheAndInitialize();
@@ -351,34 +307,65 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
 
   // 后台增量扫描 - 只扫描新文件和变化
   Future<void> _startIncrementalScan() async {
-    if (_isScanning) return; // 避免重复扫描
+    // 避免重复扫描
+    if (_isScanning) return;
 
-    _isScanning = true;
+    // 首先检查组件是否已挂载，避免在组件销毁后调用setState
+    if (!mounted) {
+      debugPrint('组件已销毁，取消增量扫描');
+      return;
+    }
+
+    setState(() {
+      _isScanning = true;
+      _currentScanInfo = "正在进行增量扫描...";
+    });
+
     debugPrint('开始增量扫描媒体文件...');
 
-    // 使用MediaIndexService进行增量扫描
-    final mediaIndexService =
-        Provider.of<MediaIndexService>(context, listen: false);
-    final bool success = await mediaIndexService.tryIncrementalScan();
+    try {
+      // 使用MediaIndexService进行增量扫描
+      final mediaIndexService =
+          Provider.of<MediaIndexService>(context, listen: false);
+      final bool success = await mediaIndexService.tryIncrementalScan();
 
-    if (success && mounted) {
-      // 增量扫描成功，从MediaIndexService获取数据
-      final indices = mediaIndexService.indices.values.toList();
+      // 完成扫描后再次检查组件是否挂载
+      if (!mounted) {
+        debugPrint('增量扫描完成，但组件已销毁');
+        return;
+      }
 
-      setState(() {
-        _sortedIndices.clear();
-        _sortedIndices.addAll(indices);
-        _reorganizeIndices();
-        _isScanning = false;
-        _currentScanInfo = "增量扫描完成";
-      });
-    } else {
-      setState(() {
-        _isScanning = false;
-        if (!success && mediaIndexService.scanError != null) {
-          _scanError = mediaIndexService.scanError;
-        }
-      });
+      if (success) {
+        // 增量扫描成功，从MediaIndexService获取数据
+        final indices = mediaIndexService.indices.values.toList();
+
+        setState(() {
+          _sortedIndices.clear();
+          _sortedIndices.addAll(indices);
+          _reorganizeIndices();
+          _isScanning = false;
+          _currentScanInfo = "增量扫描完成";
+        });
+      } else {
+        setState(() {
+          _isScanning = false;
+          if (mediaIndexService.scanError != null) {
+            _scanError = mediaIndexService.scanError;
+          }
+          _currentScanInfo = "增量扫描未发现新文件";
+        });
+      }
+    } catch (e) {
+      debugPrint('增量扫描错误: $e');
+
+      // 确保组件仍然挂载
+      if (mounted) {
+        setState(() {
+          _isScanning = false;
+          _scanError = e.toString();
+          _currentScanInfo = "增量扫描出错: $e";
+        });
+      }
     }
   }
 

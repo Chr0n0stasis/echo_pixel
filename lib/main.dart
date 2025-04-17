@@ -1,8 +1,7 @@
 import 'package:device_info_plus/device_info_plus.dart';
-import 'package:echo_pixel/models/media_index.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'dart:io' show Platform, SecurityContext;
+import 'dart:io' show Platform;
 import 'package:media_kit/media_kit.dart'; // 导入MediaKit
 import 'package:permission_handler/permission_handler.dart'; // 导入权限处理包
 import 'package:provider/provider.dart';
@@ -10,13 +9,9 @@ import 'services/theme_service.dart';
 import 'services/preview_quality_service.dart'; // 导入预览质量服务
 import 'services/webdav_service.dart'; // 导入WebDAV服务
 import 'services/media_sync_service.dart'; // 导入媒体同步服务
-import 'services/album_service.dart'; // 导入相册服务
 import 'services/media_index_service.dart'; // 导入媒体索引服务
-
 import 'screens/photo_gallery_page.dart';
-import 'screens/albums_page.dart'; // 导入相册页面
 import 'screens/settings_page.dart'; // 导入新的设置页面
-import 'screens/create_album_page.dart'; // 导入创建相册页面
 
 void main() async {
   // 确保初始化Flutter绑定
@@ -40,10 +35,6 @@ void main() async {
     mediaSyncService.initialize(), // 初始化媒体同步服务
   ]);
 
-  // 添加相册服务
-  final albumService = AlbumService();
-  await albumService.loadAlbums(); // 初始化加载相册
-
   // 在Android平台上请求权限
   if (Platform.isAndroid) {
     await requestPermissions();
@@ -60,8 +51,6 @@ void main() async {
         Provider<MediaSyncService>.value(value: mediaSyncService),
         // 添加WebDavService作为Provider
         Provider<WebDavService>.value(value: webDavService),
-        // 添加AlbumService作为Provider
-        ChangeNotifierProvider<AlbumService>.value(value: albumService),
         // 添加MediaIndexService作为Provider
         ChangeNotifierProvider<MediaIndexService>.value(
             value: mediaIndexService),
@@ -186,47 +175,14 @@ class _HomeScreenState extends State<HomeScreen> {
     _initializePhotoGalleryPage();
   }
 
-  // 处理浮动按钮点击事件
-  void _handleFloatingActionButtonPressed() {
-    if (_selectedIndex == 0) {
-      // 照片库页面 - 可以处理照片导入等操作
-    } else if (_selectedIndex == 1) {
-      // 相册页面 - 创建新相册
-      // 使用MediaIndexService获取媒体索引
-      final mediaIndexService =
-          Provider.of<MediaIndexService>(context, listen: false);
-
-      // 检查媒体索引是否为空
-      if (mediaIndexService.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('没有可用的照片，请先扫描或导入照片')),
-        );
-        return;
-      }
-
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) =>
-              CreateAlbumPage(mediaIndices: mediaIndexService.indices),
-        ),
-      );
-    }
-  }
-
   // 页面列表
   Widget _getPageForIndex(int index) {
     switch (index) {
       case 0:
         return _photoGalleryPage;
       case 1:
-        // 使用MediaIndexService提供媒体索引
-        final mediaIndexService = Provider.of<MediaIndexService>(context);
-        // 使用我们实现的AlbumsPage组件，传入mediaIndices
-        return AlbumsPage(mediaIndices: mediaIndexService.indices);
-      case 2:
         return const SearchPage();
-      case 3:
+      case 2:
       default:
         return const SettingsPage();
     }
@@ -235,7 +191,6 @@ class _HomeScreenState extends State<HomeScreen> {
   // 底部导航项目
   final List<BottomNavigationBarItem> _bottomNavItems = [
     const BottomNavigationBarItem(icon: Icon(Icons.photo_library), label: '相册'),
-    const BottomNavigationBarItem(icon: Icon(Icons.collections), label: '合集'),
     const BottomNavigationBarItem(icon: Icon(Icons.search), label: '搜索'),
     const BottomNavigationBarItem(icon: Icon(Icons.settings), label: '设置'),
   ];
@@ -279,15 +234,6 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       ListTile(
         selected: _selectedIndex == 1,
-        leading: const Icon(Icons.collections),
-        title: const Text('合集'),
-        onTap: () {
-          _onItemTapped(1);
-          if (!isDesktop) Navigator.pop(context);
-        },
-      ),
-      ListTile(
-        selected: _selectedIndex == 2,
         leading: const Icon(Icons.search),
         title: const Text('搜索'),
         onTap: () {
@@ -297,7 +243,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       const Divider(),
       ListTile(
-        selected: _selectedIndex == 3,
+        selected: _selectedIndex == 2,
         leading: const Icon(Icons.settings),
         title: const Text('设置'),
         onTap: () {
@@ -344,10 +290,8 @@ class _HomeScreenState extends State<HomeScreen> {
         title: Text(_selectedIndex == 0
             ? '照片库'
             : _selectedIndex == 1
-                ? '合集'
-                : _selectedIndex == 2
-                    ? '搜索'
-                    : '设置'),
+                ? '搜索'
+                : '设置'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           // 集成相册页面的功能按钮
@@ -431,10 +375,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   label: Text('相册'),
                 ),
                 NavigationRailDestination(
-                  icon: Icon(Icons.collections),
-                  label: Text('合集'),
-                ),
-                NavigationRailDestination(
                   icon: Icon(Icons.search),
                   label: Text('搜索'),
                 ),
@@ -460,18 +400,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   type: BottomNavigationBarType.fixed,
                 )
               : null,
-      floatingActionButton: _selectedIndex < 2
-          ? FloatingActionButton(
-              onPressed: _handleFloatingActionButtonPressed,
-              tooltip: _selectedIndex == 0 ? '添加照片' : '创建相册',
-              heroTag: _selectedIndex == 0
-                  ? 'main_photo_fab'
-                  : 'main_album_fab', // 添加唯一的heroTag
-              child: Icon(_selectedIndex == 0
-                  ? Icons.add_photo_alternate
-                  : Icons.create_new_folder),
-            )
-          : null,
     );
   }
 }

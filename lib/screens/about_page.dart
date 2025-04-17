@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/svg.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -65,10 +66,9 @@ class _AboutPageState extends State<AboutPage> {
                     borderRadius: BorderRadius.circular(20),
                     color: Theme.of(context).colorScheme.primaryContainer,
                   ),
-                  child: Icon(
-                    Icons.camera_alt,
-                    size: 60,
-                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  child: SvgPicture.asset(
+                    "assets/icon/EchoPixel.svg",
+                    semanticsLabel: 'Dart Logo',
                   ),
                 ),
                 const SizedBox(height: 16),

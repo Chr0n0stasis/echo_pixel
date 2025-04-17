@@ -169,7 +169,6 @@ class DesktopMediaScanner {
   Future<void> _processMediaFile(File file) async {
     try {
       final String filePath = file.path;
-      final String fileName = path.basename(filePath);
       final String nameWithoutExt = path.basenameWithoutExtension(filePath);
       final String extension =
           path.extension(filePath).replaceAll('.', '').toLowerCase();

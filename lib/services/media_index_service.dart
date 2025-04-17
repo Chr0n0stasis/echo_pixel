@@ -2,8 +2,6 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:synchronized/synchronized.dart';
-import 'package:photo_manager/photo_manager.dart';
-import 'package:path/path.dart' as path;
 
 import '../models/media_index.dart';
 import 'mobile_media_scanner.dart';
@@ -37,7 +35,6 @@ class MediaIndexService extends ChangeNotifier {
   final Lock _scanLock = Lock();
 
   // 状态变量
-  bool _isInitialized = false;
   bool _isScanning = false;
   int _scanProgress = 0;
   String? _scanError;
@@ -63,8 +60,6 @@ class MediaIndexService extends ChangeNotifier {
 
     // 尝试从缓存加载
     await _tryLoadFromCache();
-
-    _isInitialized = true;
   }
 
   // 获取所有媒体索引的只读视图
@@ -112,7 +107,7 @@ class MediaIndexService extends ChangeNotifier {
     _mediaIndices = Map.from(indices);
     notifyListeners();
     debugPrint(
-        '媒体索引已更新，共有 ${indices.length} 个日期组，${totalMediaCount} 个媒体文件，${imageCount} 张照片');
+        '媒体索引已更新，共有 ${indices.length} 个日期组，$totalMediaCount 个媒体文件，$imageCount 张照片');
 
     // 保存到缓存
     _saveToCache();
