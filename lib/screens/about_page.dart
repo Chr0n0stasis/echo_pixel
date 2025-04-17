@@ -59,17 +59,10 @@ class _AboutPageState extends State<AboutPage> {
             child: Column(
               children: [
                 // 应用图标
-                Container(
+                SvgPicture.asset(
+                  "assets/icon/EchoPixel.svg",
                   width: 100,
                   height: 100,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    color: Theme.of(context).colorScheme.primaryContainer,
-                  ),
-                  child: SvgPicture.asset(
-                    "assets/icon/EchoPixel.svg",
-                    semanticsLabel: 'Dart Logo',
-                  ),
                 ),
                 const SizedBox(height: 16),
 
@@ -150,9 +143,9 @@ class _AboutPageState extends State<AboutPage> {
 
           ListTile(
             leading: const Icon(Icons.person),
-            title: const Text('Echo Team'),
-            subtitle: const Text('echo.team@example.com'),
-            onTap: () => _launchUrl('mailto:echo.team@example.com'),
+            title: const Text('shadow3'),
+            subtitle: const Text('shadow3aaaa@gmail.com'),
+            onTap: () => _launchUrl('shadow3aaaa@gmail.com'),
           ),
 
           const Divider(),
@@ -169,16 +162,6 @@ class _AboutPageState extends State<AboutPage> {
             ),
           ),
 
-          ListTile(
-            leading: const Icon(Icons.privacy_tip),
-            title: const Text('隐私政策'),
-            onTap: () => _launchUrl('https://echopixel.example.com/privacy'),
-          ),
-          ListTile(
-            leading: const Icon(Icons.gavel),
-            title: const Text('服务条款'),
-            onTap: () => _launchUrl('https://echopixel.example.com/terms'),
-          ),
           ListTile(
             leading: const Icon(Icons.code),
             title: const Text('开源许可'),

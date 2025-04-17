@@ -1,9 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:intl/intl.dart';
 import '../services/media_sync_service.dart';
-import '../services/webdav_service.dart';
 
 /// WebDAV传输状态页面 - 显示正在进行的上传和下载任务
 class WebDavStatusPage extends StatefulWidget {
