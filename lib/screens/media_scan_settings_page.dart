@@ -85,17 +85,11 @@ class _MediaScanSettingsPageState extends State<MediaScanSettingsPage> {
         // 桌面平台的默认媒体目录
         final homeDir = _getUserHomeDirectory();
 
-        if (Platform.isWindows) {
-          _scanFolders.add(path.join(homeDir, 'Pictures'));
-          _scanFolders.add(path.join(homeDir, 'Videos'));
-        } else if (Platform.isMacOS) {
-          _scanFolders.add(path.join(homeDir, 'Pictures'));
-          _scanFolders.add(path.join(homeDir, 'Movies'));
-        } else if (Platform.isLinux) {
-          _scanFolders.add(path.join(homeDir, 'Pictures'));
-          _scanFolders.add(path.join(homeDir, 'Videos'));
-        }
+        _scanFolders.add(path.join(homeDir, 'Pictures'));
+        _scanFolders.add(path.join(homeDir, 'Videos'));
       }
+
+      await _saveScanFolders();
     } catch (e) {
       debugPrint('添加默认文件夹错误: $e');
     }

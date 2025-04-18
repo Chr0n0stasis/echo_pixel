@@ -15,7 +15,6 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
   int _totalStorageUsed = 0;
   int _thumbnailCacheSize = 0;
   int _mediaCacheSize = 0;
-  int _otherCacheSize = 0;
 
   @override
   void initState() {
@@ -30,9 +29,7 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
 
     try {
       // 获取应用缓存目录
-      final cacheDir = await getTemporaryDirectory();
-      // 获取应用文档目录 - 此处不再使用appDocDir变量，直接删除不需要的代码
-      // await getApplicationDocumentsDirectory();
+      final cacheDir = await getApplicationCacheDirectory();
 
       // 计算缩略图缓存大小（假设存储在缓存目录下的thumbnails文件夹中）
       final thumbnailDir = Directory('${cacheDir.path}/thumbnails');
@@ -42,17 +39,8 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
       final mediaCacheDir = Directory('${cacheDir.path}/media_cache');
       _mediaCacheSize = await _calculateDirectorySize(mediaCacheDir);
 
-      // 计算其他缓存大小（排除了已计算的目录）
-      _otherCacheSize = await _calculateDirectorySize(cacheDir) -
-          _thumbnailCacheSize -
-          _mediaCacheSize;
-
-      // 如果值为负，则置为0
-      if (_otherCacheSize < 0) _otherCacheSize = 0;
-
       // 计算总存储使用量
-      _totalStorageUsed =
-          _thumbnailCacheSize + _mediaCacheSize + _otherCacheSize;
+      _totalStorageUsed = _thumbnailCacheSize + _mediaCacheSize;
 
       if (mounted) {
         setState(() {
@@ -249,12 +237,6 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
                           icon: Icons.video_library,
                           title: '媒体缓存',
                           size: _mediaCacheSize,
-                          formatSize: _formatSize,
-                        ),
-                        StorageItem(
-                          icon: Icons.folder,
-                          title: '其他缓存',
-                          size: _otherCacheSize,
                           formatSize: _formatSize,
                         ),
                       ],

@@ -1,4 +1,6 @@
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:echo_pixel/screens/webdav_status_page.dart';
+import 'package:echo_pixel/services/thumbnail_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:io' show Platform;
@@ -51,6 +53,7 @@ void main() async {
         Provider<MediaSyncService>.value(value: mediaSyncService),
         // 添加WebDavService作为Provider
         Provider<WebDavService>.value(value: webDavService),
+        Provider<ThumbnailService>.value(value: ThumbnailService()),
         // 添加MediaIndexService作为Provider
         ChangeNotifierProvider<MediaIndexService>.value(
             value: mediaIndexService),
@@ -159,7 +162,7 @@ class _HomeScreenState extends State<HomeScreen> {
     debugPrint('主页面：收到WebDAV设置请求');
     // 切换到设置页面
     setState(() {
-      _selectedIndex = 3; // 设置页面的索引
+      _selectedIndex = 2; // 设置页面的索引
     });
   }
 
@@ -177,21 +180,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // 页面列表
   Widget _getPageForIndex(int index) {
-    switch (index) {
-      case 0:
-        return _photoGalleryPage;
-      case 1:
-        return const SearchPage();
-      case 2:
-      default:
-        return const SettingsPage();
-    }
+    return switch (index) {
+      0 => _photoGalleryPage,
+      1 => const WebDavStatusPage(),
+      _ => const SettingsPage(),
+    };
   }
 
   // 底部导航项目
   final List<BottomNavigationBarItem> _bottomNavItems = [
     const BottomNavigationBarItem(icon: Icon(Icons.photo_library), label: '相册'),
-    const BottomNavigationBarItem(icon: Icon(Icons.search), label: '搜索'),
+    const BottomNavigationBarItem(
+        icon: Icon(Icons.cloud_outlined), label: 'Webdav'),
     const BottomNavigationBarItem(icon: Icon(Icons.settings), label: '设置'),
   ];
 
@@ -235,7 +235,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ListTile(
         selected: _selectedIndex == 1,
         leading: const Icon(Icons.search),
-        title: const Text('搜索'),
+        title: const Text('WebDAV'),
         onTap: () {
           _onItemTapped(2);
           if (!isDesktop) Navigator.pop(context);
@@ -290,7 +290,7 @@ class _HomeScreenState extends State<HomeScreen> {
         title: Text(_selectedIndex == 0
             ? '照片库'
             : _selectedIndex == 1
-                ? '搜索'
+                ? 'WebDAV'
                 : '设置'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
@@ -307,7 +307,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
 
           // 其他页面的功能按钮
-          if (_selectedIndex != 0 && _selectedIndex != 3)
+          if (_selectedIndex != 0 && _selectedIndex != 2)
             IconButton(
               icon: const Icon(Icons.cloud_sync),
               onPressed: () {
@@ -315,44 +315,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 PhotoGalleryPage.controller.syncWithWebDav();
               },
             ),
-
-          // 更多选项菜单
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              switch (value) {
-                case 'refresh':
-                  if (_selectedIndex == 0) {
-                    PhotoGalleryPage.controller.refresh();
-                  }
-                  break;
-                case 'settings':
-                  _onItemTapped(3); // 跳转到设置页面
-                  break;
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'refresh',
-                child: Row(
-                  children: [
-                    Icon(Icons.refresh),
-                    SizedBox(width: 8),
-                    Text('刷新'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'settings',
-                child: Row(
-                  children: [
-                    Icon(Icons.settings),
-                    SizedBox(width: 8),
-                    Text('设置'),
-                  ],
-                ),
-              ),
-            ],
-          ),
         ],
       ),
       drawer: isDesktop || isTabletOrLarger
@@ -375,8 +337,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   label: Text('相册'),
                 ),
                 NavigationRailDestination(
-                  icon: Icon(Icons.search),
-                  label: Text('搜索'),
+                  icon: Icon(Icons.cloud_outlined),
+                  label: Text('WebDAV'),
                 ),
                 NavigationRailDestination(
                   icon: Icon(Icons.settings),
@@ -400,19 +362,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   type: BottomNavigationBarType.fixed,
                 )
               : null,
-    );
-  }
-}
-
-// 搜索页面 - 暂时保持简单的占位实现，后续可以单独实现
-class SearchPage extends StatelessWidget {
-  const SearchPage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.all(16.0),
-      child: Center(child: Text('搜索页面 - 这里可以搜索照片')),
     );
   }
 }

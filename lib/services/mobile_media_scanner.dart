@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:echo_pixel/services/media_sync_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:path/path.dart' as path;
@@ -188,6 +189,7 @@ class MobileMediaScanner {
           Directory(path.join(dir.path, 'DCIM')),
           Directory(path.join(dir.path, 'Pictures')),
           Directory(path.join(dir.path, 'DCIM', 'Camera')),
+          await getAppMediaDirectory(),
         ];
 
         for (final scanDir in dirsToScan) {

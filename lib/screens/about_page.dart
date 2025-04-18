@@ -121,11 +121,6 @@ class _AboutPageState extends State<AboutPage> {
             title: const Text('WebDAV同步'),
             subtitle: const Text('将媒体文件同步到任何WebDAV服务器'),
           ),
-          ListTile(
-            leading: const Icon(Icons.search),
-            title: const Text('高级搜索'),
-            subtitle: const Text('快速查找您需要的照片'),
-          ),
 
           const Divider(),
 
@@ -192,18 +187,10 @@ class _AboutPageState extends State<AboutPage> {
       applicationVersion: _appVersion,
       applicationIcon: Padding(
         padding: const EdgeInsets.all(8.0),
-        child: Container(
-          width: 50,
-          height: 50,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            color: Theme.of(context).colorScheme.primaryContainer,
-          ),
-          child: Icon(
-            Icons.camera_alt,
-            size: 30,
-            color: Theme.of(context).colorScheme.onPrimaryContainer,
-          ),
+        child: SvgPicture.asset(
+          "assets/icon/EchoPixel.svg",
+          width: 100,
+          height: 100,
         ),
       ),
     );

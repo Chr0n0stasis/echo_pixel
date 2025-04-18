@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/webdav_service.dart';
 import '../services/media_sync_service.dart';
@@ -23,7 +24,7 @@ class _WebDavSettingsScreenState extends State<WebDavSettingsScreen> {
   final _passwordController = TextEditingController();
   final _uploadRootPathController = TextEditingController(text: '/');
   final _maxConcurrentTasksController = TextEditingController(text: '5');
-  final _webDavService = WebDavService();
+  late final WebDavService _webDavService;
   late final MediaSyncService _mediaSyncService;
 
   bool _isConnecting = false;
@@ -43,12 +44,14 @@ class _WebDavSettingsScreenState extends State<WebDavSettingsScreen> {
   @override
   void initState() {
     super.initState();
-    // 初始化或获取MediaSyncService
-    _mediaSyncService =
-        widget.mediaSyncService ?? MediaSyncService(_webDavService);
+    Future.microtask(() {
+      if (!mounted) return;
 
-    // 从本地存储加载WebDAV配置
-    _loadSavedSettings();
+      _webDavService = context.read<WebDavService>();
+      _mediaSyncService = context.read<MediaSyncService>();
+      // 从本地存储加载WebDAV配置
+      _loadSavedSettings();
+    });
   }
 
   // 加载保存的WebDAV设置
@@ -87,9 +90,7 @@ class _WebDavSettingsScreenState extends State<WebDavSettingsScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => WebDavStatusPage(
-          mediaSyncService: _mediaSyncService,
-        ),
+        builder: (context) => WebDavStatusPage(),
       ),
     );
   }

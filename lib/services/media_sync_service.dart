@@ -224,7 +224,7 @@ class MediaSyncService {
       _deviceInfo = await DeviceInfo.getDeviceInfo();
 
       // 获取应用专属目录
-      _appMediaDir = await _getAppMediaDirectory();
+      _appMediaDir = await getAppMediaDirectory();
 
       // 加载本地存储的云端映射表
       await _loadCloudMapping();
@@ -290,24 +290,6 @@ class MediaSyncService {
       }
       rethrow;
     }
-  }
-
-  /// 获取应用专属媒体目录（存放从云端下载的文件）
-  Future<Directory> _getAppMediaDirectory() async {
-    Directory appDir;
-
-    if (Platform.isAndroid || Platform.isIOS) {
-      appDir = await getApplicationDocumentsDirectory();
-    } else {
-      appDir = await getApplicationSupportDirectory();
-    }
-
-    final mediaDir = Directory('${appDir.path}/media');
-    if (!await mediaDir.exists()) {
-      await mediaDir.create(recursive: true);
-    }
-
-    return mediaDir;
   }
 
   /// 加载本地存储的云端映射表
@@ -751,6 +733,31 @@ class MediaSyncService {
         _transferTasks.add(uploadTask);
         _updateTransferTasks();
 
+        // 检查云端文件是否已存在
+        try {
+          final fileExists = await _webdavService.fileExists(mapping.cloudPath);
+          if (fileExists) {
+            // 文件已存在，标记为已同步并跳过上传
+            debugPrint('文件已存在于云端，跳过上传: ${mapping.cloudPath}');
+            await progressLock.synchronized(() {
+              updatedMappings
+                  .add(mapping.copyWithSyncStatus(SyncStatus.synced));
+              uploadedSize += mapping.fileSize;
+              final progress = 30 + ((uploadedSize / totalSize) * 30).round();
+              uploadProgress.value = progress;
+              _syncProgress = progress;
+            });
+
+            // 标记任务完成
+            uploadTask.markCompleted();
+            _updateTransferTasks();
+            return;
+          }
+        } catch (e) {
+          // 检查文件存在时出错，继续尝试上传
+          debugPrint('检查云端文件是否存在时出错: $e');
+        }
+
         try {
           // 尝试直接上传到云端
           uploadTask.markInProgress();
@@ -977,4 +984,22 @@ class MediaSyncService {
       onTransferTasksUpdate!(_transferTasks);
     }
   }
+}
+
+/// 获取应用专属媒体目录（存放从云端下载的文件）
+Future<Directory> getAppMediaDirectory() async {
+  Directory appDir;
+
+  if (Platform.isAndroid || Platform.isIOS) {
+    appDir = await getApplicationDocumentsDirectory();
+  } else {
+    appDir = await getApplicationSupportDirectory();
+  }
+
+  final mediaDir = Directory('${appDir.path}/media');
+  if (!await mediaDir.exists()) {
+    await mediaDir.create(recursive: true);
+  }
+
+  return mediaDir;
 }

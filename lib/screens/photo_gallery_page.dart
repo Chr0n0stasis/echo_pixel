@@ -1,16 +1,14 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:convert';
 import 'dart:typed_data';
 import 'package:echo_pixel/screens/image_viewer_page.dart';
 import 'package:echo_pixel/screens/video_player_page.dart';
 import 'package:echo_pixel/screens/webdav_settings.dart';
 import 'package:echo_pixel/services/media_cache_service.dart';
+import 'package:echo_pixel/services/thumbnail_service.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb, compute;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:collection/collection.dart';
-import 'package:path/path.dart' as path;
-import 'package:crypto/crypto.dart' as crypto;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:provider/provider.dart';
@@ -18,7 +16,6 @@ import 'package:provider/provider.dart';
 import '../models/media_index.dart';
 import '../services/media_sync_service.dart';
 import '../services/webdav_service.dart';
-import '../services/video_thumbnail_service.dart';
 import '../services/preview_quality_service.dart';
 import '../services/media_index_service.dart';
 
@@ -82,7 +79,7 @@ class PhotoGalleryController {
 
 // 声明公开的状态类，用于公共接口访问
 class PhotoGalleryPageState extends State<PhotoGalleryPage> {
-  final WebDavService _webdavService = WebDavService();
+  late final WebDavService _webdavService;
   late final MediaSyncService _mediaSyncService;
 
   // 视频缩略图缓存
@@ -93,9 +90,6 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
 
   // 同步进度定时器
   Timer? _syncProgressTimer;
-
-  // 媒体服务初始化状态
-  bool _isMediaServiceInitialized = false;
 
   // 是否正在加载
   bool _isLoading = true;
@@ -112,30 +106,17 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
   // 同步进度
   int _syncProgress = 0;
 
-  // 扫描进度
-  int _scanProgress = 0;
-
   // 错误消息
   String? _errorMsg;
 
   // 同步错误消息
   String? _syncError;
 
-  // 扫描错误消息
-  String? _scanError;
-
   // 当前正在上传的文件信息
   String? _currentUploadInfo;
 
-  // 当前扫描状态信息
-  String? _currentScanInfo;
-
   // 按日期排序的媒体索引
   final List<MediaIndex> _sortedIndices = [];
-
-  // 待处理的文件夹和文件
-  final List<Directory> _pendingFolders = [];
-  final List<File> _pendingFiles = [];
 
   // 当前加载进度
   double _loadProgress = 0.0;
@@ -143,13 +124,9 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
   // 最大缩略图大小（用于限制加载大图片）
   static const int _maxThumbnailSize = 10 * 1024 * 1024; // 10MB
 
-  // 批量加载大小
-  static const int _batchSize = 20;
-
   // 初始化变量
   late final MediaCacheService _mediaCacheService = MediaCacheService();
   bool _isFirstLoad = true;
-  bool _isCacheLoaded = false;
 
   // 公开方法供外部调用
   void syncWithWebDav(BuildContext context) {
@@ -184,43 +161,13 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
     // 向控制器注册当前状态实例，这样按钮就能正常工作了
     PhotoGalleryPage.controller._registerState(this);
 
-    _mediaSyncService = MediaSyncService(_webdavService);
+    Future.microtask(() {
+      if (!mounted) return;
 
-    // 立即尝试从缓存加载
-    _loadFromCacheAndInitialize();
-  }
-
-  // 处理扫描结果，将其添加到现有的索引中
-  void _handleScanResults(Map<String, MediaIndex> newIndices) {
-    // 合并新索引到排序索引列表中
-    for (final entry in newIndices.entries) {
-      final existingIndex = _sortedIndices
-          .firstWhereOrNull((index) => index.datePath == entry.key);
-
-      if (existingIndex != null) {
-        // 如果已存在该日期的索引，则合并媒体文件（避免重复）
-        final existingIds = <String>{};
-        for (final file in existingIndex.mediaFiles) {
-          existingIds.add(file.id);
-        }
-
-        // 只添加不存在的媒体文件
-        for (final file in entry.value.mediaFiles) {
-          if (!existingIds.contains(file.id)) {
-            existingIndex.mediaFiles.add(file);
-          }
-        }
-      } else {
-        // 如果不存在该日期的索引，则直接添加
-        _sortedIndices.add(entry.value);
-      }
-    }
-
-    // 重新组织和排序索引
-    _reorganizeIndices();
-
-    // 保存到缓存
-    _saveToCache();
+      _mediaSyncService = context.read<MediaSyncService>();
+      _webdavService = context.read<WebDavService>();
+      _loadFromCacheAndInitialize();
+    });
   }
 
   // 从缓存加载媒体索引并初始化必要服务
@@ -236,10 +183,6 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
 
     // 无论缓存是否加载成功，都初始化媒体服务
     await _mediaSyncService.initialize();
-
-    setState(() {
-      _isMediaServiceInitialized = true;
-    });
 
     // 如果缓存加载失败，开始完整加载流程
     if (!cacheLoaded && _isFirstLoad) {
@@ -278,7 +221,6 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
         _sortedIndices.addAll(indexList);
         _reorganizeIndices();
         _isLoading = false;
-        _isCacheLoaded = true;
       });
 
       debugPrint('成功从缓存加载了 ${_sortedIndices.length} 个媒体索引');
@@ -318,7 +260,6 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
 
     setState(() {
       _isScanning = true;
-      _currentScanInfo = "正在进行增量扫描...";
     });
 
     debugPrint('开始增量扫描媒体文件...');
@@ -344,15 +285,10 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
           _sortedIndices.addAll(indices);
           _reorganizeIndices();
           _isScanning = false;
-          _currentScanInfo = "增量扫描完成";
         });
       } else {
         setState(() {
           _isScanning = false;
-          if (mediaIndexService.scanError != null) {
-            _scanError = mediaIndexService.scanError;
-          }
-          _currentScanInfo = "增量扫描未发现新文件";
         });
       }
     } catch (e) {
@@ -362,30 +298,8 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
       if (mounted) {
         setState(() {
           _isScanning = false;
-          _scanError = e.toString();
-          _currentScanInfo = "增量扫描出错: $e";
         });
       }
-    }
-  }
-
-  // 将媒体索引保存到缓存
-  Future<void> _saveToCache() async {
-    try {
-      // 将列表转换为Map
-      final Map<String, MediaIndex> indicesMap = {};
-      for (final index in _sortedIndices) {
-        indicesMap[index.datePath] = index;
-      }
-
-      // 保存到缓存
-      final success = await _mediaCacheService.saveIndicesToCache(indicesMap);
-      debugPrint('媒体索引${success ? '已' : '未'}保存到缓存');
-
-      // 同时更新媒体索引服务
-      _updateMediaIndexService();
-    } catch (e) {
-      debugPrint('保存媒体索引到缓存失败: $e');
     }
   }
 
@@ -450,189 +364,6 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
         });
       }
     }
-  }
-
-  // 在后台继续加载更多文件
-  Future<void> _loadMoreInBackground() async {
-    // 如果已经没有待处理项，或者已经在加载中，直接返回
-    if ((_pendingFolders.isEmpty && _pendingFiles.isEmpty) || _isLoadingMore) {
-      return;
-    }
-
-    // 加载下一批
-    await _loadNextBatch();
-
-    // 如果还有更多，延迟一小段时间后继续加载（给UI留出响应时间）
-    if (_pendingFolders.isNotEmpty || _pendingFiles.isNotEmpty) {
-      await Future.delayed(const Duration(milliseconds: 200));
-      // 递归调用继续加载
-      _loadMoreInBackground();
-    }
-  }
-
-  // 加载下一批文件
-  Future<void> _loadNextBatch() async {
-    // 如果没有待处理项目，直接返回
-    if (_pendingFolders.isEmpty && _pendingFiles.isEmpty) {
-      return;
-    }
-
-    setState(() {
-      _isLoadingMore = true;
-    });
-
-    try {
-      // 处理待处理的文件
-      final filesToProcess = <File>[];
-
-      // 首先填充文件队列
-      while (_pendingFolders.isNotEmpty && filesToProcess.length < _batchSize) {
-        final currentDir = _pendingFolders.removeAt(0);
-        try {
-          final dirContents = await currentDir.list().toList();
-
-          // 将子目录添加到待处理目录队列
-          for (final entity in dirContents) {
-            if (entity is Directory) {
-              _pendingFolders.add(entity);
-            } else if (entity is File) {
-              // 检查是否为媒体文件
-              final extension = path.extension(entity.path).toLowerCase();
-              final ext = extension.replaceAll('.', '');
-              if (MediaFileInfo.isImageExtension(ext) ||
-                  MediaFileInfo.isVideoExtension(ext)) {
-                filesToProcess.add(entity);
-                if (filesToProcess.length >= _batchSize) break;
-              }
-            }
-          }
-        } catch (e) {
-          debugPrint('无法处理目录 ${currentDir.path}: $e');
-        }
-      }
-
-      // 如果文件队列不足，从待处理文件中补充
-      while (_pendingFiles.isNotEmpty && filesToProcess.length < _batchSize) {
-        filesToProcess.add(_pendingFiles.removeAt(0));
-      }
-
-      // 处理这批文件
-      for (final file in filesToProcess) {
-        await _processMediaFile(file);
-      }
-
-      // 重新组织和排序索引
-      _reorganizeIndices();
-    } catch (e) {
-      debugPrint('批量加载错误: $e');
-    } finally {
-      setState(() {
-        _isLoadingMore = false;
-        // 更新总加载进度
-        final totalPending =
-            _pendingFiles.length + _pendingFolders.length * 10; // 估算值
-        final totalProcessed = 100 - totalPending.clamp(0, 100);
-        _loadProgress = totalProcessed / 100;
-      });
-    }
-  }
-
-  // 处理单个媒体文件
-  Future<void> _processMediaFile(File file) async {
-    try {
-      final filePath = file.path;
-      final fileSize = await file.length();
-
-      final String nameWithoutExt = path.basenameWithoutExtension(filePath);
-      final String extension =
-          path.extension(filePath).replaceAll('.', '').toLowerCase();
-
-      // 获取文件类型
-      final MediaType mediaType = MediaFileInfo.inferTypeFromPath(filePath);
-
-      // 如果不是受支持的媒体类型，跳过
-      if (mediaType == MediaType.unknown) {
-        return;
-      }
-
-      // 获取文件基本信息
-      final FileStat stat = await file.stat();
-
-      // 使用文件的修改时间作为创建时间
-      final DateTime createdAt = stat.modified;
-      final DateTime modifiedAt = stat.modified;
-
-      // 对于小文件，读取内容生成哈希；对于大文件，使用路径和大小的组合作为ID
-      String mediaId;
-      if (fileSize < 50 * 1024 * 1024) {
-        // 50MB以下的文件
-        final bytes = await file.readAsBytes();
-        final digest = await compute(_computeHash, bytes);
-        mediaId = digest;
-      } else {
-        // 对于大文件，使用路径+大小+修改时间的哈希作为ID
-        final idSource =
-            '$filePath:$fileSize:${modifiedAt.millisecondsSinceEpoch}';
-        mediaId = await compute(_computeStringHash, idSource);
-      }
-
-      // 获取日期路径
-      final String datePath = MediaIndex.getDatePath(createdAt);
-
-      // 创建媒体信息对象
-      final MediaFileInfo mediaInfo = MediaFileInfo(
-        id: mediaId,
-        originalPath: filePath,
-        name: nameWithoutExt,
-        extension: extension,
-        size: fileSize,
-        type: mediaType,
-        createdAt: createdAt,
-        modifiedAt: modifiedAt,
-      );
-
-      // 将媒体信息添加到按日期索引的集合中
-      if (mounted) {
-        setState(() {
-          // 将媒体文件添加到日期索引中
-          final existingIndex = _sortedIndices.firstWhereOrNull(
-            (index) => index.datePath == datePath,
-          );
-
-          if (existingIndex != null) {
-            // 检查是否已经存在相同ID的媒体
-            final exists = existingIndex.mediaFiles.any(
-              (file) => file.id == mediaId,
-            );
-            if (!exists) {
-              existingIndex.mediaFiles.add(mediaInfo);
-            }
-          } else {
-            // 创建新的日期索引
-            final newIndex = MediaIndex(
-              datePath: datePath,
-              mediaFiles: [mediaInfo],
-            );
-            _sortedIndices.add(newIndex);
-          }
-        });
-      }
-    } catch (e) {
-      debugPrint('处理媒体文件错误: ${file.path}, $e');
-    }
-  }
-
-  // 静态方法用于在isolate中计算哈希值
-  static String _computeHash(Uint8List bytes) {
-    final digest = crypto.sha256.convert(bytes);
-    return digest.toString();
-  }
-
-  // 静态方法用于在isolate中计算字符串的哈希值
-  static String _computeStringHash(String input) {
-    final bytes = utf8.encode(input);
-    final digest = crypto.sha256.convert(bytes);
-    return digest.toString();
   }
 
   // 重新组织和排序索引
@@ -1353,27 +1084,6 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
       }
     }
   }
-
-  // 在_saveToCache方法后添加方法，更新媒体索引服务
-  Future<void> _updateMediaIndexService() async {
-    try {
-      // 使用Provider获取媒体索引服务实例
-      final mediaIndexService =
-          Provider.of<MediaIndexService>(context, listen: false);
-
-      // 将列表转换为Map
-      final Map<String, MediaIndex> indicesMap = {};
-      for (final index in _sortedIndices) {
-        indicesMap[index.datePath] = index;
-      }
-
-      // 更新媒体索引服务
-      mediaIndexService.updateIndices(indicesMap);
-      debugPrint('媒体索引已同步到MediaIndexService');
-    } catch (e) {
-      debugPrint('更新媒体索引服务失败: $e');
-    }
-  }
 }
 
 // 懒加载视频缩略图组件 - 使用 VideoThumbnailService 生成缩略图
@@ -1394,7 +1104,7 @@ class LazyLoadingVideoThumbnail extends StatefulWidget {
 
 class _LazyLoadingVideoThumbnailState extends State<LazyLoadingVideoThumbnail> {
   // 使用视频缩略图服务
-  final VideoThumbnailService _thumbnailService = VideoThumbnailService();
+  late final ThumbnailService _thumbnailService;
 
   String? _thumbnailPath;
   bool _isLoading = true;
@@ -1403,7 +1113,12 @@ class _LazyLoadingVideoThumbnailState extends State<LazyLoadingVideoThumbnail> {
   @override
   void initState() {
     super.initState();
-    _loadThumbnail();
+    Future.microtask(() {
+      if (!mounted) return; // ✅ 避免 context 异常
+
+      _thumbnailService = context.read<ThumbnailService>();
+      _loadThumbnail();
+    });
   }
 
   Future<void> _loadThumbnail() async {

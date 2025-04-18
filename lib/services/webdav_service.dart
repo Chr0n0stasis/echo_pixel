@@ -210,6 +210,31 @@ class WebDavService {
     }
   }
 
+  // 检查文件是否存在
+  Future<bool> fileExists(String path) async {
+    if (!_isConnected) {
+      throw Exception('WebDAV not connected');
+    }
+
+    try {
+      final response = await _makeRequest(
+        method: 'PROPFIND',
+        path: path,
+        headers: {'Depth': '0'},
+      );
+
+      // 返回200或207表示文件存在
+      return response.statusCode == 200 || response.statusCode == 207;
+    } catch (e) {
+      // 如果是404错误，表示文件不存在
+      if (e.toString().contains('404')) {
+        return false;
+      }
+      // 其他错误重新抛出
+      throw Exception('Error checking file existence: $e');
+    }
+  }
+
   // 生成HTTP请求
   Future<http.Response> _makeRequest({
     required String method,

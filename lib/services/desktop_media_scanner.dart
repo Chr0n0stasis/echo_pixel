@@ -1,7 +1,9 @@
 import 'dart:io';
+import 'package:echo_pixel/services/media_sync_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 import 'package:crypto/crypto.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/media_index.dart';
 
@@ -52,30 +54,16 @@ class DesktopMediaScanner {
       _scanError = null;
       _mediaIndices.clear();
 
-      // 获取用户主目录
-      final String homeDir = _getUserHomeDirectory();
-
-      // 图片和视频目录路径
-      final String picturesDir = path.join(homeDir, 'Pictures');
-      final String videosDir = path.join(homeDir, 'Videos');
+      final prefs = await SharedPreferences.getInstance();
+      final scanFolders = prefs.getStringList('scan_folders');
 
       // 要扫描的目录列表
-      final List<Directory> dirsToScan = [];
+      final List<Directory> dirsToScan = scanFolders != null
+          ? scanFolders.map((folder) => Directory(folder)).toList()
+          : [];
+      dirsToScan.add(await getAppMediaDirectory());
 
-      // 添加图片目录（如果存在）
-      if (await Directory(picturesDir).exists()) {
-        dirsToScan.add(Directory(picturesDir));
-      }
-
-      // 添加视频目录（如果存在）
-      if (await Directory(videosDir).exists()) {
-        dirsToScan.add(Directory(videosDir));
-      }
-
-      if (dirsToScan.isEmpty) {
-        _scanError = '未找到Pictures或Videos文件夹';
-        return _mediaIndices;
-      }
+      debugPrint('扫描目录: ${scanFolders!.join(', ')}');
 
       // 收集所有媒体文件
       final List<FileSystemEntity> allMediaFiles = [];
@@ -141,15 +129,6 @@ class DesktopMediaScanner {
     } finally {
       _isScanning = false;
       _scanProgress = 0;
-    }
-  }
-
-  /// 获取用户主目录
-  String _getUserHomeDirectory() {
-    if (Platform.isWindows) {
-      return Platform.environment['USERPROFILE'] ?? '';
-    } else {
-      return Platform.environment['HOME'] ?? '';
     }
   }
 
