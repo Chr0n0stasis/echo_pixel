@@ -387,16 +387,6 @@ class _WebDavSettingsScreenState extends State<WebDavSettingsScreen> {
                     subtitle: Text('设置自动同步间隔'),
                     trailing: Icon(Icons.arrow_forward_ios, size: 16),
                   ),
-                  ListTile(
-                    title: Text('同步方向'),
-                    subtitle: Text('设置上传和下载选项'),
-                    trailing: Icon(Icons.arrow_forward_ios, size: 16),
-                  ),
-                  ListTile(
-                    title: Text('网络设置'),
-                    subtitle: Text('设置何时允许同步'),
-                    trailing: Icon(Icons.arrow_forward_ios, size: 16),
-                  ),
                 ],
               ),
             ],

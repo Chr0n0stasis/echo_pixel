@@ -8,7 +8,7 @@
 PRODUCT_NAME = echo_pixel
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.example.echoPixel
+PRODUCT_BUNDLE_IDENTIFIER = io.github.shadow3.echoPixel
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2025 com.example. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2025 io.github.shadow3. All rights reserved.
