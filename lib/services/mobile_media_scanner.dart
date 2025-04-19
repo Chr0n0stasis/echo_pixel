@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:echo_pixel/services/media_sync_service.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart' as path_provider;
@@ -223,7 +224,8 @@ class MobileMediaScanner {
 
       // 使用compute处理文件
       if (files.isNotEmpty) {
-        final results = await compute(_processFiles, files);
+        final token = RootIsolateToken.instance!;
+        final results = await compute(_processFiles, (token, files));
 
         // 合并结果
         for (final entry in results.entries) {
@@ -356,14 +358,24 @@ Future<Map<String, MediaIndex>> _processBatch(List<AssetEntity> batch) async {
 }
 
 /// 在隔离进程中处理一批文件
-Future<Map<String, MediaIndex>> _processFiles(List<File> files) async {
+Future<Map<String, MediaIndex>> _processFiles(
+    (RootIsolateToken, List<File>) args) async {
+  final (token, files) = args;
+  // 确保在隔离进程中初始化BackgroundIsolateBinaryMessenger
+  // 这是修复"BackgroundIsolateBinaryMessenger.instance值无效"错误的关键
+  try {
+    BackgroundIsolateBinaryMessenger.ensureInitialized(token);
+  } catch (e) {
+    debugPrint('初始化BackgroundIsolateBinaryMessenger失败: $e');
+    // 继续执行，因为有些平台或者Flutter版本可能不需要这个步骤
+  }
+
   final Map<String, MediaIndex> result = {};
   int skippedCount = 0;
 
   for (final file in files) {
     try {
       final filePath = file.path;
-      debugPrint('文件路径: $filePath');
       final fileSize = await file.length();
 
       // 跳过特别大的文件，避免内存溢出
@@ -577,7 +589,7 @@ Future<MediaFileInfo?> _processAssetToMediaInfo(AssetEntity asset) async {
       size: fileSize,
       type: mediaType,
       createdAt: asset.createDateTime,
-      modifiedAt: asset.modifiedDateTime ?? asset.createDateTime,
+      modifiedAt: asset.modifiedDateTime,
       resolution: resolution,
       duration: asset.type == AssetType.video ? asset.videoDuration : null,
     );
