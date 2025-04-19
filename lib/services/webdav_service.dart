@@ -210,6 +210,16 @@ class WebDavService {
     }
   }
 
+  // 删除文件 - 提供更明确的API
+  Future<bool> deleteFile(String path) async {
+    return delete(path);
+  }
+
+  // 删除目录 - 提供更明确的API
+  Future<bool> deleteDirectory(String path) async {
+    return delete(path);
+  }
+
   // 检查文件是否存在
   Future<bool> fileExists(String path) async {
     if (!_isConnected) {

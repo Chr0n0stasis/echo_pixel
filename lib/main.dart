@@ -1,4 +1,5 @@
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:echo_pixel/screens/device_management_page.dart';
 import 'package:echo_pixel/screens/webdav_status_page.dart';
 import 'package:echo_pixel/services/thumbnail_service.dart';
 import 'package:flutter/material.dart';
@@ -183,6 +184,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return switch (index) {
       0 => _photoGalleryPage,
       1 => const WebDavStatusPage(),
+      2 => const DeviceManagementPage(),
       _ => const SettingsPage(),
     };
   }
@@ -191,7 +193,8 @@ class _HomeScreenState extends State<HomeScreen> {
   final List<BottomNavigationBarItem> _bottomNavItems = [
     const BottomNavigationBarItem(icon: Icon(Icons.photo_library), label: '相册'),
     const BottomNavigationBarItem(
-        icon: Icon(Icons.cloud_outlined), label: 'Webdav'),
+        icon: Icon(Icons.cloud_outlined), label: 'WebDAV'),
+    const BottomNavigationBarItem(icon: Icon(Icons.devices), label: '设备'),
     const BottomNavigationBarItem(icon: Icon(Icons.settings), label: '设置'),
   ];
 
@@ -234,8 +237,17 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       ListTile(
         selected: _selectedIndex == 1,
-        leading: const Icon(Icons.search),
+        leading: const Icon(Icons.cloud_outlined),
         title: const Text('WebDAV'),
+        onTap: () {
+          _onItemTapped(1);
+          if (!isDesktop) Navigator.pop(context);
+        },
+      ),
+      ListTile(
+        selected: _selectedIndex == 2,
+        leading: const Icon(Icons.devices),
+        title: const Text('设备管理'),
         onTap: () {
           _onItemTapped(2);
           if (!isDesktop) Navigator.pop(context);
@@ -243,7 +255,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       const Divider(),
       ListTile(
-        selected: _selectedIndex == 2,
+        selected: _selectedIndex == 3,
         leading: const Icon(Icons.settings),
         title: const Text('设置'),
         onTap: () {
@@ -256,8 +268,8 @@ class _HomeScreenState extends State<HomeScreen> {
         leading: const Icon(Icons.cloud_sync),
         title: const Text('WebDAV同步'),
         onTap: () {
-          // 转到设置页面
-          _onItemTapped(3);
+          // 触发同步
+          PhotoGalleryPage.controller.syncWithWebDav();
           if (!isDesktop) Navigator.pop(context);
         },
       ),
@@ -291,7 +303,9 @@ class _HomeScreenState extends State<HomeScreen> {
             ? '照片库'
             : _selectedIndex == 1
                 ? 'WebDAV'
-                : '设置'),
+                : _selectedIndex == 2
+                    ? '设备管理'
+                    : '设置'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           // 集成相册页面的功能按钮
@@ -307,7 +321,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
 
           // 其他页面的功能按钮
-          if (_selectedIndex != 0 && _selectedIndex != 2)
+          if (_selectedIndex != 0 && _selectedIndex != 3)
             IconButton(
               icon: const Icon(Icons.cloud_sync),
               onPressed: () {
@@ -339,6 +353,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 NavigationRailDestination(
                   icon: Icon(Icons.cloud_outlined),
                   label: Text('WebDAV'),
+                ),
+                NavigationRailDestination(
+                  icon: Icon(Icons.devices),
+                  label: Text('设备'),
                 ),
                 NavigationRailDestination(
                   icon: Icon(Icons.settings),
