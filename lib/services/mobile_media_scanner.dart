@@ -363,6 +363,7 @@ Future<Map<String, MediaIndex>> _processFiles(List<File> files) async {
   for (final file in files) {
     try {
       final filePath = file.path;
+      debugPrint('文件路径: $filePath');
       final fileSize = await file.length();
 
       // 跳过特别大的文件，避免内存溢出
@@ -382,8 +383,54 @@ Future<Map<String, MediaIndex>> _processFiles(List<File> files) async {
       final MediaType mediaType = MediaFileInfo.inferTypeFromPath(filePath);
 
       if (mediaType != MediaType.unknown) {
-        // 使用文件的修改时间作为创建时间（可能不准确）
-        final DateTime createdAt = stat.modified;
+        // 确定文件的实际创建日期
+        DateTime? createdAt;
+
+        // 检查文件路径是否包含从云端同步的标志
+        final appDir = await path_provider.getApplicationSupportDirectory();
+        final bool isCloudSyncedFile =
+            filePath.contains('${appDir.path}${Platform.pathSeparator}media');
+
+        if (isCloudSyncedFile) {
+          // 如果是从云端同步到本地的文件，尝试从路径中提取日期
+          // 路径格式通常是: \media\YYYY\MM\DD\filename.ext
+          try {
+            // 路径片段
+            final pathSegments = filePath.split(Platform.pathSeparator);
+
+            // 查找media目录之后的三个连续段
+            int mediaIndex = pathSegments.indexOf('media');
+            if (mediaIndex != -1 && mediaIndex + 3 < pathSegments.length) {
+              final yearStr = pathSegments[mediaIndex + 1];
+              final monthStr = pathSegments[mediaIndex + 2];
+              final dayStr = pathSegments[mediaIndex + 3];
+
+              // 检查是否是年/月/日格式
+              final yearRegex = RegExp(r'^\d{4}$');
+              final monthDayRegex = RegExp(r'^\d{2}$');
+
+              if (yearRegex.hasMatch(yearStr) &&
+                  monthDayRegex.hasMatch(monthStr) &&
+                  monthDayRegex.hasMatch(dayStr)) {
+                final year = int.tryParse(yearStr);
+                final month = int.tryParse(monthStr);
+                final day = int.tryParse(dayStr);
+
+                if (year != null && month != null && day != null) {
+                  // 创建日期对象
+                  createdAt = DateTime(year, month, day);
+                  debugPrint(
+                      '从路径提取日期: $yearStr/$monthStr/$dayStr -> $createdAt');
+                }
+              }
+            }
+          } catch (e) {
+            debugPrint('从路径提取日期错误: $e, 将使用文件修改时间');
+          }
+        }
+
+        // 如果没有从路径中提取到日期，则使用文件的修改时间
+        createdAt ??= stat.modified;
         final DateTime modifiedAt = stat.modified;
 
         // 生成安全的ID，对于大文件使用流式处理

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
@@ -28,6 +29,18 @@ class MediaCacheService {
   // 最后一次扫描时间
   DateTime? _lastScanTime;
 
+  // 防抖计时器
+  Timer? _debounceTimer;
+
+  // 防抖延迟（毫秒）
+  static const int _debounceDelayMs = 5000; // 5秒
+
+  // 待保存的索引
+  Map<String, MediaIndex>? _pendingSaveIndices;
+
+  // 上次保存时间
+  DateTime? _lastSaveTime;
+
   // 工厂构造函数
   factory MediaCacheService() {
     return _instance;
@@ -43,7 +56,8 @@ class MediaCacheService {
 
       // 获取应用文档目录
       final appDir = await getApplicationSupportDirectory();
-      _cachePath = '${appDir.path}/$_mediaCacheFileName';
+      _cachePath =
+          '${appDir.path}${Platform.pathSeparator}$_mediaCacheFileName';
 
       // 加载最后扫描时间
       final prefs = await SharedPreferences.getInstance();
@@ -58,6 +72,17 @@ class MediaCacheService {
     } catch (e) {
       debugPrint('初始化媒体缓存服务失败: $e');
     }
+  }
+
+  // 取消所有防抖操作
+  void cancelDebounce() {
+    _debounceTimer?.cancel();
+    _debounceTimer = null;
+  }
+
+  // 在实例销毁时清理资源
+  void dispose() {
+    cancelDebounce();
   }
 
   /// 加载缓存的媒体索引
@@ -118,6 +143,7 @@ class MediaCacheService {
       // 更新最后扫描时间
       final now = DateTime.now();
       _lastScanTime = now;
+      _lastSaveTime = now;
 
       // 保存最后扫描时间
       final prefs = await SharedPreferences.getInstance();
@@ -129,6 +155,45 @@ class MediaCacheService {
       debugPrint('保存媒体索引到缓存失败: $e');
       return false;
     }
+  }
+
+  /// 保存媒体索引到缓存（带防抖）
+  Future<void> debouncedSaveIndicesToCache(
+      Map<String, MediaIndex> indices) async {
+    // 保存待处理的索引
+    _pendingSaveIndices = Map.from(indices);
+
+    // 取消之前的计时器（如果有）
+    _debounceTimer?.cancel();
+
+    // 检查是否需要立即保存（如果距离上次保存超过了30秒）
+    final now = DateTime.now();
+    if (_lastSaveTime == null ||
+        now.difference(_lastSaveTime!).inSeconds > 30) {
+      // 立即保存
+      await _executeSave();
+      return;
+    }
+
+    // 设置新的防抖计时器
+    _debounceTimer = Timer(Duration(milliseconds: _debounceDelayMs), () async {
+      await _executeSave();
+    });
+  }
+
+  /// 执行实际的保存操作
+  Future<void> _executeSave() async {
+    if (_pendingSaveIndices != null) {
+      await saveIndicesToCache(_pendingSaveIndices!);
+      _pendingSaveIndices = null;
+    }
+  }
+
+  /// 强制立即保存（忽略防抖）
+  Future<bool> forceSaveIndicesToCache(Map<String, MediaIndex> indices) async {
+    cancelDebounce();
+    _pendingSaveIndices = null;
+    return await saveIndicesToCache(indices);
   }
 
   /// 清除缓存
@@ -150,6 +215,7 @@ class MediaCacheService {
 
       _cachedIndices = null;
       _lastScanTime = null;
+      _lastSaveTime = null;
     } catch (e) {
       debugPrint('清除媒体索引缓存失败: $e');
     }
@@ -157,6 +223,9 @@ class MediaCacheService {
 
   /// 获取最后扫描时间
   DateTime? get lastScanTime => _lastScanTime;
+
+  /// 获取最后保存时间
+  DateTime? get lastSaveTime => _lastSaveTime;
 
   /// 是否有缓存
   Future<bool> hasCachedIndices() async {

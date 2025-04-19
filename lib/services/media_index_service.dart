@@ -269,6 +269,8 @@ class MediaIndexService extends ChangeNotifier {
 
   // 处理扫描结果
   void _handleScanResults(Map<String, MediaIndex> newIndices) {
+    bool hasUpdates = false;
+
     for (final entry in newIndices.entries) {
       if (_mediaIndices.containsKey(entry.key)) {
         // 如果已存在该日期的索引，合并媒体文件（避免重复）
@@ -282,24 +284,36 @@ class MediaIndexService extends ChangeNotifier {
         for (final file in entry.value.mediaFiles) {
           if (!existingIds.contains(file.id)) {
             existingIndex.mediaFiles.add(file);
+            hasUpdates = true;
           }
         }
       } else {
         // 如果不存在该日期的索引，则直接添加
         _mediaIndices[entry.key] = entry.value;
+        hasUpdates = true;
       }
     }
 
-    _reorganizeIndices();
-    notifyListeners();
+    if (hasUpdates) {
+      _reorganizeIndices();
+      notifyListeners();
+
+      // 使用防抖保存，而不是等待全部完成
+      _debouncedSaveToCache();
+    }
   }
 
-  // 重新组织和排序索引
+  // 重新组织索引
   void _reorganizeIndices() {
     // 对每个日期中的文件进行排序
     for (final index in _mediaIndices.values) {
-      index.mediaFiles.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      index.mediaFiles.sort((a, b) => a.createdAt.compareTo(b.createdAt));
     }
+  }
+
+  // 使用防抖机制的保存方法
+  void _debouncedSaveToCache() {
+    _mediaCacheService.debouncedSaveIndicesToCache(_mediaIndices);
   }
 
   // 尝试从缓存加载索引
@@ -338,8 +352,9 @@ class MediaIndexService extends ChangeNotifier {
   // 将媒体索引保存到缓存
   Future<void> _saveToCache() async {
     try {
+      // 使用强制保存，确保最终状态被持久化
       final success =
-          await _mediaCacheService.saveIndicesToCache(_mediaIndices);
+          await _mediaCacheService.forceSaveIndicesToCache(_mediaIndices);
       debugPrint('媒体索引${success ? '已' : '未'}保存到缓存');
     } catch (e) {
       debugPrint('保存媒体索引到缓存失败: $e');

@@ -13,6 +13,32 @@ import 'webdav_service.dart';
 import 'desktop_media_scanner.dart';
 import 'mobile_media_scanner.dart'; // 添加导入MobileMediaScanner
 
+/// 同步步骤枚举，用于表示当前同步进度所处的阶段
+enum SyncStep {
+  preparing(0, '准备同步'),
+  uploadingMapping(1, '上传本地映射表'),
+  downloadingMappings(2, '下载并合并云端映射表'),
+  creatingDirectories(3, '创建云端目录结构'),
+  uploadingFiles(4, '上传文件'),
+  downloadingFiles(5, '下载文件'),
+  savingState(6, '保存同步状态'),
+  completed(7, '同步完成');
+
+  final int stepIndex;
+  final String description;
+
+  const SyncStep(this.stepIndex, this.description);
+
+  static SyncStep fromIndex(int stepIndex) {
+    return SyncStep.values.firstWhere(
+      (step) => step.stepIndex == stepIndex,
+      orElse: () => SyncStep.preparing,
+    );
+  }
+
+  static int get count => SyncStep.values.length;
+}
+
 /// 传输任务状态
 enum TransferStatus {
   pending, // 等待开始
@@ -203,6 +229,18 @@ class MediaSyncService {
     });
   }
 
+  /// 当前同步步骤
+  SyncStep _currentSyncStep = SyncStep.preparing;
+
+  /// 获取当前同步步骤
+  SyncStep get currentSyncStep => _currentSyncStep;
+
+  /// 获取同步步骤总数
+  int get syncStepCount => SyncStep.count;
+
+  /// 获取当前同步步骤描述
+  String get currentStepDescription => _currentSyncStep.description;
+
   /// 获取同步状态
   bool get isSyncing => _isSyncing;
 
@@ -214,6 +252,20 @@ class MediaSyncService {
 
   /// 获取当前同步状态信息
   String? get syncStatusInfo => _syncStatusInfo;
+
+  /// 取消标志，用于终止同步过程
+  bool _cancelSync = false;
+
+  /// 终止正在进行的同步
+  Future<void> cancelSync() async {
+    if (_isSyncing) {
+      _cancelSync = true;
+      _updateSyncStatus('正在终止同步...');
+    }
+  }
+
+  /// 判断是否终止同步
+  bool get isCancelRequested => _cancelSync;
 
   /// 初始化服务
   Future<void> initialize() async {
@@ -349,8 +401,8 @@ class MediaSyncService {
 
     // 收集所有媒体文件
     final allMediaFiles = <MediaFileInfo>[];
-    for (final index in _mediaIndices.values) {
-      allMediaFiles.addAll(index.mediaFiles);
+    for (final stepIndex in _mediaIndices.values) {
+      allMediaFiles.addAll(stepIndex.mediaFiles);
     }
 
     // 更新映射
@@ -400,43 +452,98 @@ class MediaSyncService {
       }
 
       try {
+        // 重置取消标志
+        _cancelSync = false;
         _isSyncing = true;
         _syncProgress = 0;
         _syncError = null;
 
+        // 重置同步步骤
+        _currentSyncStep = SyncStep.preparing;
+
         // 更新同步状态
         _updateSyncStatus('正在准备同步...');
 
+        // 检查是否请求取消
+        if (_cancelSync) {
+          _syncError = '同步已被用户取消';
+          _updateSyncStatus('同步已被用户取消');
+          return false;
+        }
+
         // 1. 上传本地映射表到云端
+        _currentSyncStep = SyncStep.uploadingMapping;
         _updateSyncStatus('正在上传本地映射表...');
         await _uploadMappingToCloud();
         _syncProgress = 10;
 
+        // 检查是否请求取消
+        if (_cancelSync) {
+          _syncError = '同步已被用户取消';
+          _updateSyncStatus('同步已被用户取消');
+          return false;
+        }
+
         // 2. 下载并合并云端的映射表
+        _currentSyncStep = SyncStep.downloadingMappings;
         _updateSyncStatus('正在下载并合并云端映射表...');
         await _downloadAndMergeMappings();
         _syncProgress = 20;
 
+        // 检查是否请求取消
+        if (_cancelSync) {
+          _syncError = '同步已被用户取消';
+          _updateSyncStatus('同步已被用户取消');
+          return false;
+        }
+
         // 3. 创建云端目录结构
+        _currentSyncStep = SyncStep.creatingDirectories;
         _updateSyncStatus('正在创建云端目录结构...');
         await _createCloudDirectories();
         _syncProgress = 30;
 
+        // 检查是否请求取消
+        if (_cancelSync) {
+          _syncError = '同步已被用户取消';
+          _updateSyncStatus('同步已被用户取消');
+          return false;
+        }
+
         // 4. 上传待上传的文件
+        _currentSyncStep = SyncStep.uploadingFiles;
         _updateSyncStatus('正在上传文件...');
         await _uploadPendingFiles();
         _syncProgress = 60;
 
+        // 检查是否请求取消
+        if (_cancelSync) {
+          _syncError = '同步已被用户取消';
+          _updateSyncStatus('同步已被用户取消');
+          return false;
+        }
+
         // 5. 下载需要的文件
+        _currentSyncStep = SyncStep.downloadingFiles;
         _updateSyncStatus('正在下载文件...');
         await _downloadNeededFiles();
         _syncProgress = 90;
 
+        // 检查是否请求取消
+        if (_cancelSync) {
+          _syncError = '同步已被用户取消';
+          _updateSyncStatus('同步已被用户取消');
+          return false;
+        }
+
         // 6. 再次上传更新后的映射表
+        _currentSyncStep = SyncStep.savingState;
         _updateSyncStatus('正在保存同步状态...');
         await _uploadMappingToCloud();
         _syncProgress = 100;
 
+        // 标记同步完成
+        _currentSyncStep = SyncStep.completed;
         _updateSyncStatus('同步完成');
 
         // 7. 更新设备同步时间
@@ -446,11 +553,12 @@ class MediaSyncService {
 
         return true;
       } catch (e) {
-        _syncError = '同步错误: $e';
-        _updateSyncStatus('同步出错: ${e.toString()}');
+        _syncError = _cancelSync ? '同步已被用户取消' : '同步错误: $e';
+        _updateSyncStatus(_cancelSync ? '同步已被用户取消' : '同步出错: ${e.toString()}');
         return false;
       } finally {
         _isSyncing = false;
+        _cancelSync = false; // 重置取消标志
       }
     });
   }
@@ -941,8 +1049,8 @@ class MediaSyncService {
   /// 获取所有媒体文件
   List<MediaFileInfo> getAllMediaFiles() {
     final allFiles = <MediaFileInfo>[];
-    for (final index in _mediaIndices.values) {
-      allFiles.addAll(index.mediaFiles);
+    for (final stepIndex in _mediaIndices.values) {
+      allFiles.addAll(stepIndex.mediaFiles);
     }
     return allFiles;
   }
@@ -996,7 +1104,7 @@ Future<Directory> getAppMediaDirectory() async {
     appDir = await getApplicationSupportDirectory();
   }
 
-  final mediaDir = Directory('${appDir.path}/media');
+  final mediaDir = Directory('${appDir.path}${Platform.pathSeparator}media');
   if (!await mediaDir.exists()) {
     await mediaDir.create(recursive: true);
   }

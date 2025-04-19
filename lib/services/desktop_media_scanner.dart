@@ -3,6 +3,7 @@ import 'package:echo_pixel/services/media_sync_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 import 'package:crypto/crypto.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/media_index.dart';
@@ -164,8 +165,54 @@ class DesktopMediaScanner {
       final FileStat stat = await file.stat();
       final int fileSize = stat.size;
 
-      // 使用文件的修改时间作为创建时间（受限于文件系统API）
-      final DateTime createdAt = stat.modified;
+      // 确定文件的实际创建日期
+      DateTime? createdAt;
+
+      // 检查文件路径是否包含从云端同步的标志（例如应用专属目录中的文件）
+      final appDir = await getApplicationSupportDirectory();
+      debugPrint('文件路径: $filePath');
+      final bool isCloudSyncedFile =
+          filePath.contains('${appDir.path}${Platform.pathSeparator}media');
+
+      if (isCloudSyncedFile) {
+        // 如果是从云端同步到本地的文件，尝试从路径中提取日期
+        // Windows路径格式通常是: \media\YYYY\MM\DD\filename.ext
+        try {
+          // 路径片段
+          final pathSegments = filePath.split(Platform.pathSeparator);
+
+          // 查找media目录之后的三个连续段
+          int mediaIndex = pathSegments.indexOf('media');
+          if (mediaIndex != -1 && mediaIndex + 3 < pathSegments.length) {
+            final yearStr = pathSegments[mediaIndex + 1];
+            final monthStr = pathSegments[mediaIndex + 2];
+            final dayStr = pathSegments[mediaIndex + 3];
+
+            // 检查是否是年/月/日格式
+            final yearRegex = RegExp(r'^\d{4}$');
+            final monthDayRegex = RegExp(r'^\d{2}$');
+
+            if (yearRegex.hasMatch(yearStr) &&
+                monthDayRegex.hasMatch(monthStr) &&
+                monthDayRegex.hasMatch(dayStr)) {
+              final year = int.tryParse(yearStr);
+              final month = int.tryParse(monthStr);
+              final day = int.tryParse(dayStr);
+
+              if (year != null && month != null && day != null) {
+                // 创建日期对象
+                createdAt = DateTime(year, month, day);
+                debugPrint('从路径提取日期: $yearStr/$monthStr/$dayStr -> $createdAt');
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('从路径提取日期错误: $e, 将使用文件修改时间');
+        }
+      }
+
+      // 如果没有从路径中提取到日期，则使用文件的修改时间
+      createdAt ??= stat.modified;
       final DateTime modifiedAt = stat.modified;
 
       // 生成媒体ID (使用流式处理大文件)

@@ -303,6 +303,35 @@ class _WebDavStatusPageState extends State<WebDavStatusPage> {
                   ),
                 ),
               ],
+              // 添加终止同步按钮
+              if (_isSyncing) ...[
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton.icon(
+                      onPressed: _cancelSync,
+                      icon: const Icon(Icons.cancel_outlined),
+                      label: const Text('终止同步'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton.icon(
+                      onPressed: _forceStopSync,
+                      icon: const Icon(Icons.stop_circle_outlined),
+                      label: const Text('强制终止'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor:
+                            Theme.of(context).colorScheme.errorContainer,
+                        foregroundColor:
+                            Theme.of(context).colorScheme.onErrorContainer,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
@@ -312,10 +341,8 @@ class _WebDavStatusPageState extends State<WebDavStatusPage> {
 
   // 构建同步步骤进度
   Widget _buildSyncProgressSteps() {
-    // 计算当前处于哪个步骤
-    final currentStepIndex =
-        (_syncProgress / (100 / _syncSteps.length)).floor();
-    final currentStep = currentStepIndex.clamp(0, _syncSteps.length - 1);
+    // 使用同步服务提供的当前步骤索引
+    final currentStepIndex = _mediaSyncService.currentSyncStep.index;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
@@ -338,8 +365,8 @@ class _WebDavStatusPageState extends State<WebDavStatusPage> {
               padding: const EdgeInsets.all(16.0),
               child: Column(
                 children: [
-                  for (int i = 0; i < _syncSteps.length; i++)
-                    _buildStepItem(i, currentStep),
+                  for (final step in SyncStep.values)
+                    _buildStepItem(step, currentStepIndex),
                 ],
               ),
             ),
@@ -350,10 +377,10 @@ class _WebDavStatusPageState extends State<WebDavStatusPage> {
   }
 
   // 构建单个步骤项
-  Widget _buildStepItem(int index, int currentStep) {
-    final bool isCompleted = index < currentStep;
-    final bool isCurrent = index == currentStep;
-    final bool isUpcoming = index > currentStep;
+  Widget _buildStepItem(SyncStep step, int currentStepIndex) {
+    final bool isCompleted = step.index < currentStepIndex;
+    final bool isCurrent = step.index == currentStepIndex;
+    final bool isUpcoming = step.index > currentStepIndex;
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -399,7 +426,7 @@ class _WebDavStatusPageState extends State<WebDavStatusPage> {
                 ),
               ),
             ),
-            if (index < _syncSteps.length - 1)
+            if (step.index < SyncStep.values.length - 1)
               Container(
                 width: 2,
                 height: 24,
@@ -421,7 +448,7 @@ class _WebDavStatusPageState extends State<WebDavStatusPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _syncSteps[index],
+                  step.description,
                   style: TextStyle(
                     fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
                     color: isUpcoming
@@ -522,6 +549,99 @@ class _WebDavStatusPageState extends State<WebDavStatusPage> {
         ],
       ),
     );
+  }
+
+  // 正常终止同步
+  void _cancelSync() async {
+    // 显示确认对话框
+    final bool confirm = await showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('终止同步'),
+            content: const Text('确定要终止当前的同步操作吗？系统将在完成当前步骤后中止同步。'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('取消'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                style: TextButton.styleFrom(
+                  foregroundColor: Theme.of(context).colorScheme.error,
+                ),
+                child: const Text('终止'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (confirm && mounted) {
+      // 调用同步服务的取消方法
+      await _mediaSyncService.cancelSync();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已请求终止同步，系统将在完成当前步骤后中止')),
+      );
+    }
+  }
+
+  // 强制终止同步
+  void _forceStopSync() async {
+    // 显示确认对话框，警告用户可能会导致数据不一致
+    final bool confirm = await showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('强制终止同步'),
+            content: const Text(
+              '确定要强制终止当前的同步操作吗？\n\n警告：强制终止可能导致数据不一致或文件损坏，仅在同步卡住无法正常终止时使用此选项。',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('取消'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.errorContainer,
+                  foregroundColor:
+                      Theme.of(context).colorScheme.onErrorContainer,
+                ),
+                child: const Text('强制终止'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (confirm && mounted) {
+      try {
+        // 设置取消标志，并调用setState强制重绘UI
+        await _mediaSyncService.cancelSync();
+        // 强制重绘UI以反映状态变化
+        setState(() {
+          _syncStatusInfo = '正在强制终止同步...';
+        });
+
+        // 等待一小段时间，让UI更新并处理取消请求
+        await Future.delayed(const Duration(milliseconds: 800));
+
+        // 模拟强制终止后的状态（在真实场景中可能需要额外处理）
+        setState(() {
+          _isSyncing = false;
+          _syncError = '同步已被用户强制终止';
+        });
+
+        // 显示提示
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('同步已被强制终止')),
+        );
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('终止同步失败: $e')),
+        );
+      }
+    }
   }
 }
 
