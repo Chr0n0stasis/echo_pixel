@@ -308,20 +308,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     : '设置'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
-          // 集成相册页面的功能按钮
-          if (_selectedIndex == 0) ...[
-            // 同步按钮 - 使用控制器直接调用相册页面的功能
-            IconButton(
-              tooltip: '同步媒体文件',
-              onPressed: () {
-                PhotoGalleryPage.controller.syncWithWebDav();
-              },
-              icon: const Icon(Icons.sync),
-            ),
-          ],
-
-          // 其他页面的功能按钮
-          if (_selectedIndex != 0 && _selectedIndex != 3)
+          if (_selectedIndex != 3)
             IconButton(
               icon: const Icon(Icons.cloud_sync),
               onPressed: () {
