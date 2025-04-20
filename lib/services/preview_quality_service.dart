@@ -53,4 +53,6 @@ class PreviewQualityService extends ChangeNotifier {
 
   // 获取视频预览分辨率（高度）
   int get videoPreviewHeight => _isHighQuality ? 720 : 360;
+
+  get thumbnailSize => null;
 }

@@ -2,10 +2,12 @@ import 'dart:io';
 import 'package:echo_pixel/services/media_sync_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:p_limit/p_limit.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart' as path_provider;
 import 'package:crypto/crypto.dart';
+import 'package:synchronized/synchronized.dart';
 
 import '../models/media_index.dart';
 
@@ -144,7 +146,8 @@ class MobileMediaScanner {
       if (batch.isEmpty) continue;
 
       // 使用compute在隔离进程中处理资源
-      final batchResults = await compute(_processBatch, batch);
+      final token = RootIsolateToken.instance!;
+      final batchResults = await compute(_processBatch, (batch, token));
 
       // 合并结果
       for (final entry in batchResults.entries) {
@@ -249,66 +252,6 @@ class MobileMediaScanner {
     }
   }
 
-  /// 执行增量扫描（仅获取新文件）
-  Future<Map<String, MediaIndex>> incrementalScan(
-      DateTime lastScanTime, Set<String> existingIds) async {
-    if (_isScanning) {
-      return {};
-    }
-
-    try {
-      _isScanning = true;
-      final Map<String, MediaIndex> newIndices = {};
-
-      // 请求权限
-      final permResult = await PhotoManager.requestPermissionExtend();
-      if (!permResult.isAuth) {
-        return {};
-      }
-
-      // 获取所有媒体资源
-      final albums = await PhotoManager.getAssetPathList(
-        type: RequestType.common,
-        hasAll: true,
-      );
-
-      if (albums.isEmpty) return {};
-
-      // 获取"全部"相册
-      final allAlbum = albums.first;
-
-      // 获取最近的几张照片
-      // 注意：photo_manager不支持按时间过滤，我们需要手动过滤
-      const batchSize = 100;
-      final assets = await allAlbum.getAssetListPaged(page: 0, size: batchSize);
-
-      // 创建时间早于上次扫描的资源的过滤参数
-      final minTime = lastScanTime.subtract(const Duration(minutes: 5));
-
-      // 过滤出新添加的资源
-      final newAssets = assets
-          .where((asset) =>
-              asset.createDateTime.isAfter(minTime) &&
-              !existingIds.contains(asset.id))
-          .toList();
-
-      if (newAssets.isEmpty) {
-        return {};
-      }
-
-      // 使用compute处理新资源
-      final results = await compute(_processBatch, newAssets);
-      newIndices.addAll(results);
-
-      return newIndices;
-    } catch (e) {
-      debugPrint('增量扫描错误: $e');
-      return {};
-    } finally {
-      _isScanning = false;
-    }
-  }
-
   /// 获取按日期组织的媒体索引
   Map<String, MediaIndex> getMediaIndices() {
     return Map.unmodifiable(_mediaIndices);
@@ -331,28 +274,36 @@ class MobileMediaScanner {
 }
 
 /// 在隔离进程中处理一批媒体资源
-Future<Map<String, MediaIndex>> _processBatch(List<AssetEntity> batch) async {
+Future<Map<String, MediaIndex>> _processBatch(
+    (List<AssetEntity>, RootIsolateToken) args) async {
+  final (batch, token) = args;
+  BackgroundIsolateBinaryMessenger.ensureInitialized(token);
   final Map<String, MediaIndex> batchResult = {};
+  final lock = Lock();
 
-  for (final asset in batch) {
-    try {
-      final mediaInfo = await _processAssetToMediaInfo(asset);
-      if (mediaInfo != null) {
-        final datePath = MediaIndex.getDatePath(asset.createDateTime);
+  final limit = PLimit(16);
+  final tasks = batch.map((asset) => limit(() async {
+        try {
+          final mediaInfo = await _processAssetToMediaInfo(asset);
+          if (mediaInfo != null) {
+            final datePath = MediaIndex.getDatePath(asset.createDateTime);
 
-        if (!batchResult.containsKey(datePath)) {
-          batchResult[datePath] = MediaIndex(
-            datePath: datePath,
-            mediaFiles: [],
-          );
+            await lock.synchronized(() {
+              if (!batchResult.containsKey(datePath)) {
+                batchResult[datePath] = MediaIndex(
+                  datePath: datePath,
+                  mediaFiles: [],
+                );
+              }
+
+              batchResult[datePath]!.mediaFiles.add(mediaInfo);
+            });
+          }
+        } catch (e) {
+          debugPrint('处理资源出错: ${asset.id}, $e');
         }
-
-        batchResult[datePath]!.mediaFiles.add(mediaInfo);
-      }
-    } catch (e) {
-      debugPrint('处理资源出错: ${asset.id}, $e');
-    }
-  }
+      }));
+  await Future.wait(tasks);
 
   return batchResult;
 }

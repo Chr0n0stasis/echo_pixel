@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:p_limit/p_limit.dart';
 import 'package:provider/provider.dart';
 import 'dart:io';
 import 'package:path/path.dart' as path;
@@ -172,42 +173,70 @@ class _DeviceManagementPageState extends State<DeviceManagementPage> {
       _isProcessingDelete = true;
     });
 
-    try {
-      // 显示进度对话框
-      final progressDialog = _showProgressDialog('正在删除设备和云端文件...');
+    // 创建一个ValueNotifier来监听进度变化
+    final progressNotifier = ValueNotifier<String>('正在准备删除操作...');
 
+    // 显示进度对话框 - 使用ValueListenableBuilder确保更新
+    _showProgressDialogWithNotifier(
+      context: context,
+      progressNotifier: progressNotifier,
+    );
+
+    try {
       // 遍历设备映射中的所有文件并从云端删除
       int totalFiles = deviceMapping.mappings.length;
       int processedFiles = 0;
 
-      for (final mapping in deviceMapping.mappings) {
-        try {
-          // 删除云端文件
-          await _webdavService.deleteFile(mapping.cloudPath);
+      progressNotifier.value = '正在删除设备和云端文件 (0/$totalFiles)...';
+      await Future.delayed(const Duration(milliseconds: 200)); // 给UI时间更新
 
-          // 更新进度
-          processedFiles++;
-          if (processedFiles % 10 == 0) {
-            // 每10个文件更新一次进度
-            progressDialog
-                .update('正在删除设备和云端文件 ($processedFiles/$totalFiles)...');
+      final limit = PLimit<void>(16);
+      final tasks = deviceMapping.mappings.map((mapping) {
+        return limit(() async {
+          try {
+            debugPrint('删除文件：${mapping.cloudPath}');
+            // 删除云端文件
+            await _webdavService.deleteFile(mapping.cloudPath);
+            // 删除本地下载的云端文件
+            final mediaDir = await getAppMediaDirectory();
+            final localFile = File(
+                '${mediaDir.path}${Platform.pathSeparator}${mapping.relativePath}');
+            if (await localFile.exists()) {
+              await localFile.delete();
+              debugPrint('删除本地文件：${localFile.path}');
+            } else {
+              debugPrint('本地文件不存在：${localFile.path}');
+            }
+            debugPrint('删除文件成功：${mapping.cloudPath}');
+
+            // 更新进度
+            processedFiles++;
+
+            final percent = (processedFiles * 100 ~/ totalFiles);
+            progressNotifier.value =
+                '正在删除设备和云端文件 ($processedFiles/$totalFiles)\n$percent%';
+          } catch (e) {
+            // 文件不存在或删除失败，继续下一个
+            debugPrint('删除文件错误：${mapping.cloudPath}，${e.toString()}');
           }
-        } catch (e) {
-          // 文件不存在或删除失败，继续下一个
-          debugPrint('删除文件错误：${mapping.cloudPath}，${e.toString()}');
-        }
-      }
+        });
+      });
+
+      await Future.wait(tasks);
 
       // 删除设备目录
       final deviceDirPath = '/EchoPixel/.mappings/${deviceMapping.deviceId}';
       try {
+        progressNotifier.value = '正在删除设备目录...';
         await _webdavService.deleteDirectory(deviceDirPath);
       } catch (e) {
         debugPrint('删除设备目录错误：$deviceDirPath，${e.toString()}');
       }
 
-      // 关闭进度对话框
-      progressDialog.close();
+      // 关闭进度对话框（如果控件仍然挂载）
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
 
       // 刷新设备列表
       await _loadDevicesFromWebDAV();
@@ -220,6 +249,11 @@ class _DeviceManagementPageState extends State<DeviceManagementPage> {
         );
       }
     } catch (e) {
+      // 确保对话框已关闭
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+
       // 添加mounted检查，确保组件仍然挂载
       if (mounted) {
         // 显示错误消息
@@ -237,6 +271,35 @@ class _DeviceManagementPageState extends State<DeviceManagementPage> {
     }
   }
 
+  // 使用ValueNotifier显示可靠的进度对话框
+  Future<void> _showProgressDialogWithNotifier({
+    required BuildContext context,
+    required ValueNotifier<String> progressNotifier,
+  }) {
+    return showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('处理中'),
+          content: ValueListenableBuilder<String>(
+            valueListenable: progressNotifier,
+            builder: (context, message, _) {
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 16),
+                  Text(message),
+                ],
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
   // 删除设备但合并映射表
   Future<void> _deleteDeviceAndMergeMappings(
       CloudMediaMapping deviceMapping) async {
@@ -246,14 +309,23 @@ class _DeviceManagementPageState extends State<DeviceManagementPage> {
       _isProcessingDelete = true;
     });
 
-    try {
-      // 显示进度对话框
-      final progressDialog = _showProgressDialog('正在合并映射表...');
+    // 创建一个ValueNotifier来监听进度变化
+    final progressNotifier = ValueNotifier<String>('正在准备合并映射表...');
 
+    // 显示进度对话框 - 使用ValueListenableBuilder确保更新
+    _showProgressDialogWithNotifier(
+      context: context,
+      progressNotifier: progressNotifier,
+    );
+
+    try {
       // 合并映射表到当前设备
       CloudMediaMapping? localMapping;
       bool hasMergedMappings = false;
+
       try {
+        progressNotifier.value = '正在读取本地映射表...';
+
         // 获取当前设备的映射表
         final localMappingFile = File(
             '${(await getApplicationSupportDirectory()).path}/cloud_mapping.json');
@@ -264,6 +336,9 @@ class _DeviceManagementPageState extends State<DeviceManagementPage> {
         // 加载当前设备映射表
         final localMappingJson = await localMappingFile.readAsString();
         localMapping = CloudMediaMapping.fromJsonString(localMappingJson);
+
+        progressNotifier.value = '正在分析映射表...';
+        await Future.delayed(const Duration(milliseconds: 100));
 
         // 获取所有本地已知的媒体ID
         final localMediaIds = Set<String>.from(
@@ -276,7 +351,11 @@ class _DeviceManagementPageState extends State<DeviceManagementPage> {
             .toList();
 
         if (newMappings.isNotEmpty) {
+          progressNotifier.value = '找到${newMappings.length}个新文件，正在合并映射表...';
+          await Future.delayed(const Duration(milliseconds: 100));
+
           // 标记为需要下载
+          int processedCount = 0;
           for (final mapping in newMappings) {
             // 创建本地路径（在应用专属目录）
             final fileName = path.basename(mapping.cloudPath);
@@ -300,28 +379,39 @@ class _DeviceManagementPageState extends State<DeviceManagementPage> {
             );
 
             localMapping.addOrUpdateMapping(newMapping);
+
+            // 更新进度
+            processedCount++;
+            if (processedCount % 20 == 0 ||
+                processedCount == newMappings.length) {
+              progressNotifier.value =
+                  '正在合并映射表 ($processedCount/${newMappings.length})...';
+              await Future.delayed(const Duration(milliseconds: 10));
+            }
           }
 
           // 保存更新后的映射表
+          progressNotifier.value = '正在保存本地映射表...';
           await localMappingFile.writeAsString(localMapping.toJsonString());
           hasMergedMappings = true;
 
           // 通知用户同步状态
-          progressDialog
-              .update('已合并${newMappings.length}个新文件的映射，正在上传更新后的映射表...');
+          progressNotifier.value = '已合并${newMappings.length}个新文件的映射，准备上传...';
+          await Future.delayed(const Duration(milliseconds: 100));
         } else {
-          progressDialog.update('没有新文件需要合并，准备删除设备...');
+          progressNotifier.value = '没有新文件需要合并，准备删除设备...';
+          await Future.delayed(const Duration(milliseconds: 100));
         }
       } catch (e) {
         debugPrint('合并映射表错误：${e.toString()}');
-        progressDialog.update('合并映射表出错: $e，将继续删除设备...');
+        progressNotifier.value = '合并映射表出错: $e，将继续删除设备...';
         await Future.delayed(const Duration(seconds: 2)); // 允许用户阅读错误信息
       }
 
       // 如果成功合并了映射表，将更新后的映射表上传到云端
       if (hasMergedMappings && localMapping != null && _currentDevice != null) {
         try {
-          progressDialog.update('正在上传更新后的映射表到云端...');
+          progressNotifier.value = '正在上传更新后的映射表到云端...';
 
           // 确保当前设备的目录存在
           final deviceDirPath = '/EchoPixel/.mappings/${_currentDevice!.uuid}';
@@ -334,15 +424,17 @@ class _DeviceManagementPageState extends State<DeviceManagementPage> {
 
           // 上传到云端
           final mappingFilePath = '$deviceDirPath/mapping.json';
+          progressNotifier.value = '正在上传映射表文件...';
           await _webdavService.uploadFile(mappingFilePath, tempFile);
 
           // 删除临时文件
           await tempFile.delete();
 
-          progressDialog.update('已上传更新后的映射表，准备删除设备...');
+          progressNotifier.value = '已上传更新后的映射表，准备删除设备...';
+          await Future.delayed(const Duration(milliseconds: 200));
         } catch (e) {
           debugPrint('上传更新后的映射表错误：${e.toString()}');
-          progressDialog.update('上传更新后的映射表出错: $e，将继续删除设备...');
+          progressNotifier.value = '上传更新后的映射表出错: $e，将继续删除设备...';
           await Future.delayed(const Duration(seconds: 2)); // 允许用户阅读错误信息
         }
       }
@@ -350,13 +442,16 @@ class _DeviceManagementPageState extends State<DeviceManagementPage> {
       // 删除设备目录
       final deviceDirPath = '/EchoPixel/.mappings/${deviceMapping.deviceId}';
       try {
+        progressNotifier.value = '正在删除设备目录...';
         await _webdavService.deleteDirectory(deviceDirPath);
       } catch (e) {
         debugPrint('删除设备目录错误：$deviceDirPath，${e.toString()}');
       }
 
-      // 关闭进度对话框
-      progressDialog.close();
+      // 关闭进度对话框（如果控件仍然挂载）
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
 
       // 刷新设备列表
       await _loadDevicesFromWebDAV();
@@ -370,6 +465,11 @@ class _DeviceManagementPageState extends State<DeviceManagementPage> {
         );
       }
     } catch (e) {
+      // 确保对话框已关闭
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+
       // 添加mounted检查，确保组件仍然挂载
       if (mounted) {
         // 显示错误消息

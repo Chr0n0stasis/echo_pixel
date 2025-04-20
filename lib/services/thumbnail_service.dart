@@ -1,5 +1,7 @@
 import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:fc_native_video_thumbnail/fc_native_video_thumbnail.dart';
 import 'package:crypto/crypto.dart' as crypto;
@@ -46,7 +48,8 @@ class ThumbnailService {
     _isInitializing = true;
     try {
       final cacheDir = await getApplicationCacheDirectory();
-      _cacheDir = Directory('${cacheDir.path}/thumbnails');
+      _cacheDir =
+          Directory('${cacheDir.path}${Platform.pathSeparator}thumbnails');
 
       // 确保缓存目录存在
       if (!await _cacheDir!.exists()) {
@@ -87,28 +90,58 @@ class ThumbnailService {
     await ensureInitialized();
     if (_cacheDir == null) return null;
 
-    // 确定缩略图质量
+    // 确定缩略图质量 - UI线程中的轻量级操作
     final bool isHighQuality = previewQualityService?.isHighQuality ?? true;
 
-    // 根据质量设置确定尺寸和质量参数
-    final int thumbnailWidth = isHighQuality ? 1080 : 480;
-    final int thumbnailHeight = isHighQuality ? 1080 : 480;
-    final int thumbnailQuality = previewQualityService?.videoThumbnailQuality ??
-        (isHighQuality ? 80 : 40);
+    // 生成缓存键 - UI线程中的轻量级操作
+    final cacheKey =
+        _generateCacheKey(videoPath, ThumbnailType.video, isHighQuality);
+    final thumbnailPath =
+        '${_cacheDir!.path}${Platform.pathSeparator}$cacheKey.jpg';
 
+    // 快速检查缓存是否存在 - 这个可以在UI线程，因为我们只是检查路径
+    final cacheFile = File(thumbnailPath);
+    if (await cacheFile.exists()) {
+      debugPrint('使用缓存${isHighQuality ? "高" : "低"}质量视频缩略图: $thumbnailPath');
+      return thumbnailPath;
+    }
+
+    // 将耗时处理移至后台线程
     try {
-      // 缓存键包含质量信息
-      final cacheKey =
-          _generateCacheKey(videoPath, ThumbnailType.video, isHighQuality);
-      final thumbnailPath = '${_cacheDir!.path}/$cacheKey.jpg';
-
-      // 检查缓存是否存在
-      final cacheFile = File(thumbnailPath);
-      if (await cacheFile.exists()) {
-        debugPrint('使用缓存${isHighQuality ? "高" : "低"}质量视频缩略图: $thumbnailPath');
-        return thumbnailPath;
+      // 获取RootIsolateToken，用于在隔离线程中访问平台通道
+      final rootToken = RootIsolateToken.instance;
+      if (rootToken == null) {
+        debugPrint('无法获取RootIsolateToken，降级到主线程处理');
+        return _processVideoThumbnailOnMainThread(
+            videoPath, thumbnailPath, isHighQuality, previewQualityService);
       }
 
+      return compute(_processVideoThumbnail, {
+        'token': rootToken,
+        'videoPath': videoPath,
+        'thumbnailPath': thumbnailPath,
+        'isHighQuality': isHighQuality,
+        'thumbnailWidth': isHighQuality ? 1080 : 480,
+        'thumbnailHeight': isHighQuality ? 1080 : 480,
+        'thumbnailQuality': previewQualityService?.videoThumbnailQuality ??
+            (isHighQuality ? 80 : 40),
+      });
+    } catch (e) {
+      debugPrint('视频缩略图处理错误: $e');
+
+      // 降级到主线程处理
+      return _processVideoThumbnailOnMainThread(
+          videoPath, thumbnailPath, isHighQuality, previewQualityService);
+    }
+  }
+
+  /// 在主线程中处理视频缩略图（作为降级方案）
+  Future<String?> _processVideoThumbnailOnMainThread(
+      String videoPath,
+      String thumbnailPath,
+      bool isHighQuality,
+      PreviewQualityService? previewQualityService) async {
+    try {
       // 检查源视频文件是否存在
       final videoFile = File(videoPath);
       if (!await videoFile.exists()) {
@@ -117,26 +150,122 @@ class ThumbnailService {
       }
 
       // 生成缩略图
-      debugPrint(
-          '生成${isHighQuality ? "高" : "低"}质量视频缩略图: $videoPath -> $thumbnailPath');
+      debugPrint('在主线程中生成视频缩略图 (降级方案): $videoPath');
       final success = await _videoThumbnailGenerator.getVideoThumbnail(
         srcFile: videoPath,
         destFile: thumbnailPath,
-        width: thumbnailWidth,
-        height: thumbnailHeight,
+        width: isHighQuality ? 480 : 240, // 降低质量，以减轻主线程负担
+        height: isHighQuality ? 480 : 240,
         format: 'jpeg',
-        quality: thumbnailQuality,
+        quality: (previewQualityService?.videoThumbnailQuality ??
+                (isHighQuality ? 80 : 40)) -
+            20,
       );
 
       if (success) {
-        debugPrint('视频缩略图生成成功: $thumbnailPath');
+        debugPrint('视频缩略图生成成功 (降级方案): $thumbnailPath');
         return thumbnailPath;
-      } else {
-        debugPrint('无法生成视频缩略图: $videoPath');
+      }
+    } catch (fallbackError) {
+      debugPrint('降级方案也失败: $fallbackError');
+    }
+
+    return null;
+  }
+
+  /// 在隔离线程中处理视频缩略图
+  static Future<String?> _processVideoThumbnail(
+      Map<String, dynamic> params) async {
+    final token = params['token'] as RootIsolateToken;
+    final String videoPath = params['videoPath'];
+    final String thumbnailPath = params['thumbnailPath'];
+    final bool isHighQuality = params['isHighQuality'];
+    final int thumbnailWidth = params['thumbnailWidth'];
+    final int thumbnailHeight = params['thumbnailHeight'];
+    final int thumbnailQuality = params['thumbnailQuality'];
+
+    // 设置隔离线程的消息处理器，以允许访问平台通道
+    BackgroundIsolateBinaryMessenger.ensureInitialized(token);
+
+    try {
+      // 检查源视频文件是否存在
+      final videoFile = File(videoPath);
+      if (!await videoFile.exists()) {
+        debugPrint('视频文件不存在: $videoPath');
+        return null;
+      }
+
+      // 创建临时实例用于生成缩略图
+      final videoThumbnailGenerator = FcNativeVideoThumbnail();
+
+      // 生成缩略图 - 增加更多错误处理
+      debugPrint(
+          '生成${isHighQuality ? "高" : "低"}质量视频缩略图: $videoPath -> $thumbnailPath');
+
+      try {
+        final success = await videoThumbnailGenerator.getVideoThumbnail(
+          srcFile: videoPath,
+          destFile: thumbnailPath,
+          width: thumbnailWidth,
+          height: thumbnailHeight,
+          format: 'jpeg',
+          quality: thumbnailQuality,
+        );
+
+        if (success) {
+          debugPrint('视频缩略图生成成功: $thumbnailPath');
+
+          // 额外检查生成的文件是否真的存在
+          final resultFile = File(thumbnailPath);
+          if (await resultFile.exists()) {
+            // 检查文件大小确保不是空文件或损坏文件
+            final fileSize = await resultFile.length();
+            if (fileSize > 100) {
+              // 至少100字节才是有效的图片
+              return thumbnailPath;
+            } else {
+              debugPrint('视频缩略图文件过小，可能已损坏: $fileSize 字节');
+              // 尝试删除无效的缩略图
+              try {
+                await resultFile.delete();
+              } catch (_) {}
+              return null;
+            }
+          } else {
+            debugPrint('虽然报告成功，但缩略图文件不存在');
+            return null;
+          }
+        } else {
+          debugPrint('无法生成视频缩略图: $videoPath');
+          return null;
+        }
+      } catch (thumbError) {
+        debugPrint('缩略图生成器异常: $thumbError');
+
+        // 尝试使用更保守的参数重试一次
+        try {
+          debugPrint('使用降级参数重试视频缩略图生成');
+          final retrySuccess = await videoThumbnailGenerator.getVideoThumbnail(
+            srcFile: videoPath,
+            destFile: thumbnailPath,
+            width: thumbnailWidth ~/ 2, // 降低一半分辨率
+            height: thumbnailHeight ~/ 2,
+            format: 'jpeg',
+            quality: thumbnailQuality - 10, // 降低质量
+          );
+
+          if (retrySuccess) {
+            final resultFile = File(thumbnailPath);
+            if (await resultFile.exists()) {
+              return thumbnailPath;
+            }
+          }
+        } catch (_) {}
+
         return null;
       }
     } catch (e) {
-      debugPrint('生成视频缩略图失败: $e');
+      debugPrint('生成视频缩略图失败: $videoPath - $e');
       return null;
     }
   }
@@ -150,37 +279,59 @@ class ThumbnailService {
     await ensureInitialized();
     if (_cacheDir == null) return null;
 
-    // 确定缩略图质量
+    // 确定缩略图质量 - 这个简单的判断可以在 UI 线程
     final bool isHighQuality = previewQualityService?.isHighQuality ?? true;
 
-    // 根据质量设置确定尺寸和质量参数
-    final int thumbnailWidth = isHighQuality
-        ? previewQualityService?.imageCacheWidth ?? 800
-        : previewQualityService?.imageCacheWidth ?? 400;
-    final int thumbnailHeight = isHighQuality
-        ? previewQualityService?.imageCacheHeight ?? 800
-        : previewQualityService?.imageCacheHeight ?? 400;
-    final int thumbnailQuality = isHighQuality ? 80 : 40;
+    // 生成唯一缓存键 - 这个计算量小，可以在 UI 线程
+    final cacheKey =
+        _generateCacheKey(imagePath, ThumbnailType.image, isHighQuality);
+
+    // 首先检查内存缓存 - 这个操作很快，可以在 UI 线程
+    if (_imageCache.containsKey(cacheKey)) {
+      return _imageCache[cacheKey];
+    }
+
+    // 将剩余的所有缩略图处理工作移至后台隔离线程
+    return compute(_processImageThumbnail, {
+      'imagePath': imagePath,
+      'cacheDir': _cacheDir!.path,
+      'cacheKey': cacheKey,
+      'isHighQuality': isHighQuality,
+      'thumbnailWidth': isHighQuality
+          ? previewQualityService?.imageCacheWidth ?? 800
+          : previewQualityService?.imageCacheWidth ?? 400,
+      'thumbnailHeight': isHighQuality
+          ? previewQualityService?.imageCacheHeight ?? 800
+          : previewQualityService?.imageCacheHeight ?? 400,
+      'thumbnailQuality': isHighQuality ? 80 : 40,
+    }).then((result) {
+      // 如果成功生成缩略图，将其添加到内存缓存中
+      if (result != null) {
+        _imageCache[cacheKey] = result;
+      }
+      return result;
+    });
+  }
+
+  /// 在隔离线程中处理图片缩略图
+  static Future<Uint8List?> _processImageThumbnail(
+      Map<String, dynamic> params) async {
+    final String imagePath = params['imagePath'];
+    final String cacheDirPath = params['cacheDir'];
+    final String cacheKey = params['cacheKey'];
+    final bool isHighQuality = params['isHighQuality'];
+    final int thumbnailWidth = params['thumbnailWidth'];
+    final int thumbnailHeight = params['thumbnailHeight'];
+    final int thumbnailQuality = params['thumbnailQuality'];
 
     try {
-      // 生成唯一缓存键
-      final cacheKey =
-          _generateCacheKey(imagePath, ThumbnailType.image, isHighQuality);
-
-      // 首先检查内存缓存
-      if (_imageCache.containsKey(cacheKey)) {
-        return _imageCache[cacheKey];
-      }
-
       // 检查文件缓存
-      final thumbnailPath = '${_cacheDir!.path}/$cacheKey.jpg';
+      final thumbnailPath =
+          '$cacheDirPath${Platform.pathSeparator}$cacheKey.jpg';
       final cacheFile = File(thumbnailPath);
       if (await cacheFile.exists()) {
-        final cachedData = await cacheFile.readAsBytes();
-        // 添加到内存缓存
-        _imageCache[cacheKey] = cachedData;
         debugPrint('使用缓存${isHighQuality ? "高" : "低"}质量图片缩略图: $thumbnailPath');
-        return cachedData;
+        return await cacheFile.readAsBytes();
       }
 
       // 检查源图片文件是否存在
@@ -194,8 +345,8 @@ class ThumbnailService {
       debugPrint('生成${isHighQuality ? "高" : "低"}质量图片缩略图: $imagePath');
       final bytes = await imageFile.readAsBytes();
 
-      // 在隔离线程中处理图片以避免阻塞UI
-      final thumbnailData = await compute(_resizeImage, {
+      // 处理图片缩放
+      final thumbnailData = _resizeImage({
         'bytes': bytes,
         'width': thumbnailWidth,
         'height': thumbnailHeight,
@@ -205,10 +356,6 @@ class ThumbnailService {
       if (thumbnailData != null) {
         // 保存到文件缓存
         await cacheFile.writeAsBytes(thumbnailData);
-
-        // 添加到内存缓存
-        _imageCache[cacheKey] = thumbnailData;
-
         debugPrint('图片缩略图生成成功: $thumbnailPath');
         return thumbnailData;
       } else {
@@ -238,9 +385,41 @@ class ThumbnailService {
       final int targetHeight = params['height'];
       final int quality = params['quality'];
 
-      // 解码图片
-      final img.Image? original = img.decodeImage(bytes);
-      if (original == null) return null;
+      // 解码图片 - 添加更多错误处理
+      img.Image? original;
+      try {
+        original = img.decodeImage(bytes);
+      } catch (e) {
+        // 尝试使用更安全的方式解码图片
+        debugPrint('标准解码失败，尝试备用解码方法: $e');
+        try {
+          // 尝试以JPEG格式解码
+          original = img.decodeJpg(bytes);
+        } catch (_) {
+          try {
+            // 尝试以PNG格式解码
+            original = img.decodePng(bytes);
+          } catch (_) {
+            // 所有解码方法都失败
+            debugPrint('所有解码方法均失败');
+            return null;
+          }
+        }
+      }
+
+      if (original == null) {
+        debugPrint('无法解码图片');
+        return null;
+      }
+
+      // 添加安全检查，确保图片尺寸合理
+      if (original.width <= 0 ||
+          original.height <= 0 ||
+          original.width > 10000 ||
+          original.height > 10000) {
+        debugPrint('图片尺寸异常: ${original.width}x${original.height}');
+        return null;
+      }
 
       // 计算比例保持宽高比
       double ratio = original.width / original.height;
@@ -254,17 +433,64 @@ class ThumbnailService {
         width = (height * ratio).round();
       }
 
-      // 调整图片大小
-      final img.Image resized = img.copyResize(original,
-          width: width,
-          height: height,
-          interpolation: img.Interpolation.average);
+      // 限制最大尺寸，避免内存问题
+      if (width > 4000) {
+        width = 4000;
+        height = (width / ratio).round();
+      }
+      if (height > 4000) {
+        height = 4000;
+        width = (height * ratio).round();
+      }
 
-      // 编码为JPEG
-      final jpegData = img.encodeJpg(resized, quality: quality);
-      return Uint8List.fromList(jpegData);
+      // 确保尺寸至少为1x1
+      width = width.clamp(1, 4000);
+      height = height.clamp(1, 4000);
+
+      // 安全调整图片大小
+      img.Image resized;
+      try {
+        resized = img.copyResize(original,
+            width: width,
+            height: height,
+            interpolation: img.Interpolation.average);
+      } catch (e) {
+        debugPrint('调整图片大小失败: $e');
+        // 尝试使用不同的插值方法
+        try {
+          resized = img.copyResize(original,
+              width: width,
+              height: height,
+              interpolation: img.Interpolation.nearest);
+        } catch (e) {
+          debugPrint('所有调整方法都失败: $e');
+          return null;
+        }
+      }
+
+      // 编码为JPEG，添加错误处理
+      try {
+        final jpegData = img.encodeJpg(resized, quality: quality);
+        return Uint8List.fromList(jpegData);
+      } catch (e) {
+        debugPrint('JPEG编码失败: $e');
+        // 尝试以较低质量重新编码
+        try {
+          final jpegData = img.encodeJpg(resized, quality: 60);
+          return Uint8List.fromList(jpegData);
+        } catch (_) {
+          // 如果JPEG编码失败，尝试PNG格式
+          try {
+            final pngData = img.encodePng(resized);
+            return Uint8List.fromList(pngData);
+          } catch (e) {
+            debugPrint('所有编码方法都失败: $e');
+            return null;
+          }
+        }
+      }
     } catch (e) {
-      debugPrint('图片处理错误: $e');
+      debugPrint('图片处理错误详情: $e');
       return null;
     }
   }
@@ -289,7 +515,7 @@ class ThumbnailService {
       // 删除高质量缩略图
       final highQualityCacheKey = _generateCacheKey(filePath, type, true);
       final highQualityThumbnailPath =
-          '${_cacheDir!.path}/$highQualityCacheKey.jpg';
+          '${_cacheDir!.path}${Platform.pathSeparator}$highQualityCacheKey.jpg';
       final highQualityCacheFile = File(highQualityThumbnailPath);
       if (await highQualityCacheFile.exists()) {
         await highQualityCacheFile.delete();
@@ -304,7 +530,7 @@ class ThumbnailService {
       // 删除低质量缩略图
       final lowQualityCacheKey = _generateCacheKey(filePath, type, false);
       final lowQualityThumbnailPath =
-          '${_cacheDir!.path}/$lowQualityCacheKey.jpg';
+          '${_cacheDir!.path}/${Platform.pathSeparator}$lowQualityCacheKey.jpg';
       final lowQualityCacheFile = File(lowQualityThumbnailPath);
       if (await lowQualityCacheFile.exists()) {
         await lowQualityCacheFile.delete();

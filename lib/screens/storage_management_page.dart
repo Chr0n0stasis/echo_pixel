@@ -32,11 +32,13 @@ class _StorageManagementPageState extends State<StorageManagementPage> {
       final cacheDir = await getApplicationCacheDirectory();
 
       // 计算缩略图缓存大小（假设存储在缓存目录下的thumbnails文件夹中）
-      final thumbnailDir = Directory('${cacheDir.path}/thumbnails');
+      final thumbnailDir =
+          Directory('${cacheDir.path}${Platform.pathSeparator}thumbnails');
       _thumbnailCacheSize = await _calculateDirectorySize(thumbnailDir);
 
       // 计算媒体缓存大小（假设存储在缓存目录下的media_cache文件夹中）
-      final mediaCacheDir = Directory('${cacheDir.path}/media_cache');
+      final mediaCacheDir =
+          Directory('${cacheDir.path}${Platform.pathSeparator}media_cache');
       _mediaCacheSize = await _calculateDirectorySize(mediaCacheDir);
 
       // 计算总存储使用量

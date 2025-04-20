@@ -72,10 +72,9 @@ class CloudMediaMapping {
       deviceId: json['deviceId'],
       deviceName: json['deviceName'],
       lastUpdated: DateTime.parse(json['lastUpdated']),
-      mappings:
-          mappingsList
-              .map((mappingJson) => MediaMapping.fromJson(mappingJson))
-              .toList(),
+      mappings: mappingsList
+          .map((mappingJson) => MediaMapping.fromJson(mappingJson))
+          .toList(),
     );
   }
 
@@ -96,6 +95,17 @@ class MediaMapping {
 
   /// 云端存储路径
   final String cloudPath;
+
+  /// 相对路径(yy/mm/dd/filename)
+  String get relativePath {
+    const prefix = 'EchoPixel/';
+    final lastIndex = cloudPath.lastIndexOf(prefix);
+    if (lastIndex != -1) {
+      return cloudPath.substring(lastIndex + prefix.length);
+    } else {
+      return cloudPath;
+    }
+  }
 
   /// 媒体类型 (用于区分图片和视频)
   final String mediaType;

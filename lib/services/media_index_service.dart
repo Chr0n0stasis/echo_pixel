@@ -214,11 +214,11 @@ class MediaIndexService extends ChangeNotifier {
     return !kIsWeb && (Platform.isAndroid || Platform.isIOS);
   }
 
-  // 新增方法：尝试增量扫描
-  Future<bool> tryIncrementalScan() async {
+  // 新增方法：尝试扫描
+  Future<bool> tryScan() async {
     return await _scanLock.synchronized(() async {
       if (_isScanning) {
-        debugPrint('已有扫描任务在进行中，跳过增量扫描');
+        debugPrint('已有扫描任务在进行中，跳过扫描');
         return false;
       }
 
@@ -228,7 +228,7 @@ class MediaIndexService extends ChangeNotifier {
       try {
         final lastScanTime = _mediaCacheService.lastScanTime;
         if (lastScanTime == null) {
-          debugPrint('没有上次扫描时间记录，无法进行增量扫描');
+          debugPrint('没有上次扫描时间记录，无法进行扫描');
           return false;
         }
 
@@ -241,23 +241,16 @@ class MediaIndexService extends ChangeNotifier {
         }
 
         if (_isMobilePlatform()) {
-          final newIndices =
-              await _mobileScanner.incrementalScan(lastScanTime, existingIds);
-          if (newIndices.isNotEmpty) {
-            _handleScanResults(newIndices);
-            await _saveToCache();
-            return true;
-          }
+          await _scanMobileMedia();
+          return true;
         } else if (_isDesktopPlatform()) {
-          // 桌面平台的增量扫描逻辑
-          // 暂时使用全量扫描替代
           await _scanDesktopMedia();
           return true;
         }
 
         return false;
       } catch (e) {
-        debugPrint('增量扫描错误: $e');
+        debugPrint('扫描错误: $e');
         _scanError = e.toString();
         return false;
       } finally {

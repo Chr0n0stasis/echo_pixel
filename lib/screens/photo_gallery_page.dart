@@ -5,12 +5,12 @@ import 'package:echo_pixel/screens/image_viewer_page.dart';
 import 'package:echo_pixel/screens/video_player_page.dart';
 import 'package:echo_pixel/screens/webdav_settings.dart';
 import 'package:echo_pixel/services/media_cache_service.dart';
-import 'package:echo_pixel/services/thumbnail_service.dart';
+import 'package:echo_pixel/widgets/lazy_loading_image_thumbnail.dart';
+import 'package:echo_pixel/widgets/lazy_loading_video_thumbnail.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:collection/collection.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:media_kit/media_kit.dart';
 import 'package:provider/provider.dart';
 
 import '../models/media_index.dart';
@@ -81,12 +81,6 @@ class PhotoGalleryController {
 class PhotoGalleryPageState extends State<PhotoGalleryPage> {
   late final WebDavService _webdavService;
   late final MediaSyncService _mediaSyncService;
-
-  // 视频缩略图缓存
-  final Map<String, Uint8List?> _videoThumbnailCache = {};
-
-  // 视频播放器管理映射 - 管理每个视频路径对应的播放器实例
-  final Map<String, Player> _videoPlayers = {};
 
   // 同步进度定时器
   Timer? _syncProgressTimer;
@@ -225,17 +219,17 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
 
       debugPrint('成功从缓存加载了 ${_sortedIndices.length} 个媒体索引');
 
-      // 检查上次扫描时间，如果超过30秒，启动后台增量扫描
+      // 检查上次扫描时间，如果超过30秒，启动后台扫描
       final lastScanTime = _mediaCacheService.lastScanTime;
       if (lastScanTime != null) {
         final secondsSinceLastScan =
             DateTime.now().difference(lastScanTime).inSeconds;
         if (secondsSinceLastScan > 30) {
-          debugPrint('上次媒体扫描已经过去 $secondsSinceLastScan 秒，开始后台增量扫描');
+          debugPrint('上次媒体扫描已经过去 $secondsSinceLastScan 秒，开始后台扫描');
 
-          // 延迟一秒后在后台执行增量扫描
+          // 延迟一秒后在后台执行扫描
           Future.delayed(const Duration(seconds: 1), () {
-            _startIncrementalScan();
+            _startScan();
           });
         }
       }
@@ -247,14 +241,14 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
     }
   }
 
-  // 后台增量扫描 - 只扫描新文件和变化
-  Future<void> _startIncrementalScan() async {
+  // 后台扫描 - 只扫描新文件和变化
+  Future<void> _startScan() async {
     // 避免重复扫描
     if (_isScanning) return;
 
     // 首先检查组件是否已挂载，避免在组件销毁后调用setState
     if (!mounted) {
-      debugPrint('组件已销毁，取消增量扫描');
+      debugPrint('组件已销毁，取消扫描');
       return;
     }
 
@@ -262,22 +256,22 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
       _isScanning = true;
     });
 
-    debugPrint('开始增量扫描媒体文件...');
+    debugPrint('开始扫描媒体文件...');
 
     try {
-      // 使用MediaIndexService进行增量扫描
+      // 使用MediaIndexService进行扫描
       final mediaIndexService =
           Provider.of<MediaIndexService>(context, listen: false);
-      final bool success = await mediaIndexService.tryIncrementalScan();
+      final bool success = await mediaIndexService.tryScan();
 
       // 完成扫描后再次检查组件是否挂载
       if (!mounted) {
-        debugPrint('增量扫描完成，但组件已销毁');
+        debugPrint('扫描完成，但组件已销毁');
         return;
       }
 
       if (success) {
-        // 增量扫描成功，从MediaIndexService获取数据
+        // 扫描成功，从MediaIndexService获取数据
         final indices = mediaIndexService.indices.values.toList();
 
         setState(() {
@@ -292,7 +286,7 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
         });
       }
     } catch (e) {
-      debugPrint('增量扫描错误: $e');
+      debugPrint('扫描错误: $e');
 
       // 确保组件仍然挂载
       if (mounted) {
@@ -703,27 +697,17 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
 
     try {
       if (mediaFile.type == MediaType.image) {
-        // 根据预览质量设置调整参数
+        // 使用懒加载图片缩略图组件
         return Container(
           color: Colors.black, // 给图片设置背景色，避免透明区域
-          child: Image.file(
-            file,
-            fit: BoxFit.cover, // 保持原始比例并填充整个容器
-            // 根据预览质量设置调整缓存宽高
-            cacheWidth: previewQualityService.imageCacheWidth,
-            cacheHeight: previewQualityService.imageCacheHeight,
-            // 根据预览质量设置调整过滤质量
-            filterQuality: previewQualityService.imageFilterQuality,
-            errorBuilder: (context, error, stackTrace) {
-              return Container(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                child: const Icon(Icons.broken_image),
-              );
-            },
+          child: LazyLoadingImageThumbnail(
+            imagePath: mediaFile.originalPath,
+            previewQualityService: previewQualityService,
+            fit: BoxFit.cover,
           ),
         );
       } else if (mediaFile.type == MediaType.video) {
-        // 视频缩略图，传递预览质量
+        // 使用懒加载视频缩略图组件
         return Container(
           color: Colors.black, // 给视频缩略图设置背景色
           child: LazyLoadingVideoThumbnail(
@@ -821,15 +805,6 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
   void dispose() {
     // 解除与控制器的关联
     PhotoGalleryPage.controller._unregisterState();
-
-    // 清除视频缩略图内存缓存
-    _videoThumbnailCache.clear();
-
-    // 释放所有视频播放器资源
-    for (final player in _videoPlayers.values) {
-      player.dispose();
-    }
-    _videoPlayers.clear();
 
     super.dispose();
   }
@@ -1006,110 +981,5 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
         await _initializeWebDav();
       }
     }
-  }
-}
-
-// 懒加载视频缩略图组件 - 使用 VideoThumbnailService 生成缩略图
-class LazyLoadingVideoThumbnail extends StatefulWidget {
-  final String videoPath;
-  final PreviewQualityService previewQualityService;
-
-  const LazyLoadingVideoThumbnail({
-    required this.videoPath,
-    required this.previewQualityService,
-    super.key,
-  });
-
-  @override
-  State<LazyLoadingVideoThumbnail> createState() =>
-      _LazyLoadingVideoThumbnailState();
-}
-
-class _LazyLoadingVideoThumbnailState extends State<LazyLoadingVideoThumbnail> {
-  // 使用视频缩略图服务
-  late final ThumbnailService _thumbnailService;
-
-  String? _thumbnailPath;
-  bool _isLoading = true;
-  bool _hasError = false;
-
-  @override
-  void initState() {
-    super.initState();
-    Future.microtask(() {
-      if (!mounted) return;
-
-      _thumbnailService = context.read<ThumbnailService>();
-      _loadThumbnail();
-    });
-  }
-
-  Future<void> _loadThumbnail() async {
-    if (!mounted) return;
-
-    setState(() {
-      _isLoading = true;
-      _hasError = false;
-    });
-
-    try {
-      // 使用视频缩略图服务获取缩略图路径
-      final thumbnailPath =
-          await _thumbnailService.getVideoThumbnail(widget.videoPath);
-
-      if (!mounted) return;
-
-      setState(() {
-        _thumbnailPath = thumbnailPath;
-        _isLoading = false;
-      });
-    } catch (e) {
-      debugPrint('生成视频缩略图错误: ${widget.videoPath} - $e');
-      if (mounted) {
-        setState(() {
-          _hasError = true;
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_isLoading) {
-      // 显示加载占位符
-      return Container(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        child: const Center(
-          child: SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-        ),
-      );
-    }
-
-    if (_hasError || _thumbnailPath == null) {
-      // 显示错误占位符
-      return Container(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        child: const Center(
-          child: Icon(Icons.error_outline, size: 32),
-        ),
-      );
-    }
-
-    // 显示缩略图
-    return Image.file(
-      File(_thumbnailPath!),
-      fit: BoxFit.cover,
-      errorBuilder: (context, error, stackTrace) {
-        return Container(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          child: const Icon(Icons.broken_image),
-        );
-      },
-    );
   }
 }

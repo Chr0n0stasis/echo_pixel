@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'package:p_limit/p_limit.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:synchronized/synchronized.dart';
@@ -920,18 +921,10 @@ class MediaSyncService {
     }
 
     try {
-      // 分批处理上传任务，每批最多 _maxConcurrentTasks 个任务
-      for (var i = 0; i < pendingUploads.length; i += _maxConcurrentTasks) {
-        final end = (i + _maxConcurrentTasks < pendingUploads.length)
-            ? i + _maxConcurrentTasks
-            : pendingUploads.length;
-        final batch = pendingUploads.sublist(i, end);
-
-        // 并行执行这一批的上传任务
-        await Future.wait(
-          batch.map((mapping) => processUpload(mapping)),
-        );
-      }
+      final limit = PLimit<void>(_maxConcurrentTasks);
+      final tasks =
+          pendingUploads.map((mapping) => limit(() => processUpload(mapping)));
+      await Future.wait(tasks);
     } finally {
       // 更新所有映射
       for (final mapping in updatedMappings) {
@@ -1013,18 +1006,10 @@ class MediaSyncService {
     }
 
     try {
-      // 分批处理下载任务，每批最多 _maxConcurrentTasks 个任务
-      for (var i = 0; i < pendingDownloads.length; i += _maxConcurrentTasks) {
-        final end = (i + _maxConcurrentTasks < pendingDownloads.length)
-            ? i + _maxConcurrentTasks
-            : pendingDownloads.length;
-        final batch = pendingDownloads.sublist(i, end);
-
-        // 并行执行这一批的下载任务
-        await Future.wait(
-          batch.map((mapping) => processDownload(mapping)),
-        );
-      }
+      final limit = PLimit(_maxConcurrentTasks);
+      final tasks = pendingDownloads
+          .map((mapping) => limit(() => processDownload(mapping)));
+      await Future.wait(tasks);
     } finally {
       // 更新所有映射
       for (final mapping in updatedMappings) {
