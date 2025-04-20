@@ -25,7 +25,6 @@ class _WebDavSettingsScreenState extends State<WebDavSettingsScreen> {
   final _uploadRootPathController = TextEditingController(text: '/');
   final _maxConcurrentTasksController = TextEditingController(text: '5');
   late final WebDavService _webDavService;
-  late final MediaSyncService _mediaSyncService;
 
   bool _isConnecting = false;
   bool _isConnected = false;
@@ -48,7 +47,6 @@ class _WebDavSettingsScreenState extends State<WebDavSettingsScreen> {
       if (!mounted) return;
 
       _webDavService = context.read<WebDavService>();
-      _mediaSyncService = context.read<MediaSyncService>();
       // 从本地存储加载WebDAV配置
       _loadSavedSettings();
     });
@@ -303,8 +301,8 @@ class _WebDavSettingsScreenState extends State<WebDavSettingsScreen> {
                   padding: const EdgeInsets.all(8.0),
                   decoration: BoxDecoration(
                     color: _isConnected
-                        ? Colors.green.withOpacity(0.25)
-                        : Colors.red.withOpacity(0.25),
+                        ? Colors.green.withValues(alpha: 0.25)
+                        : Colors.red.withValues(alpha: 0.25),
                     borderRadius: BorderRadius.circular(4.0),
                   ),
                   child: Text(

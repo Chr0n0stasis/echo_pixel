@@ -1040,21 +1040,6 @@ class MediaSyncService {
     return allFiles;
   }
 
-  // 确保用户上传路径有效
-  String _ensureValidPath(String? path) {
-    if (path == null || path.isEmpty) {
-      return '/';
-    }
-
-    // 确保路径以/开头
-    String validPath = path.startsWith('/') ? path : '/$path';
-    // 确保路径以/结尾
-    if (!validPath.endsWith('/')) {
-      validPath = '$validPath/';
-    }
-    return validPath;
-  }
-
   /// 从外部设置媒体索引（用于避免重复扫描）
   Future<void> setMediaIndices(Map<String, MediaIndex> indices) async {
     if (!_initialized) await initialize();

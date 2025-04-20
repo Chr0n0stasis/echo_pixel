@@ -82,7 +82,7 @@ class _AboutPageState extends State<AboutPage> {
                     color: Theme.of(context)
                         .colorScheme
                         .onSurface
-                        .withOpacity(0.7),
+                        .withValues(alpha: 0.7),
                   ),
                 ),
 
@@ -170,7 +170,10 @@ class _AboutPageState extends State<AboutPage> {
               '© 2025 Echo Pixel. All rights reserved.',
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.7),
                 fontSize: 12,
               ),
             ),

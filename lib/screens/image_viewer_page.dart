@@ -95,7 +95,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       backgroundColor: Colors.black,
       appBar: _isControlsVisible && !_isFullScreen
           ? AppBar(
-              backgroundColor: Colors.black.withOpacity(0.5),
+              backgroundColor: Colors.black.withValues(alpha: 0.5),
               foregroundColor: Colors.white,
               title: Text(
                 path.basename(files[_currentIndex].originalPath),
@@ -154,7 +154,7 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       ),
       bottomNavigationBar: _isControlsVisible && isGalleryMode && !_isFullScreen
           ? BottomAppBar(
-              color: Colors.black.withOpacity(0.5),
+              color: Colors.black.withValues(alpha: 0.5),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [

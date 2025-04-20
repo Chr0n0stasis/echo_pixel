@@ -219,7 +219,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(
               '您的跨平台相册',
               style: TextStyle(
-                color: Colors.white.withOpacity(0.8),
+                color: Colors.white.withValues(alpha: 0.8),
                 fontSize: 16,
               ),
             ),

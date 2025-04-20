@@ -178,7 +178,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         : Theme.of(context)
                             .colorScheme
                             .onSurface
-                            .withOpacity(0.5),
+                            .withValues(alpha: 0.5),
                   ),
                   title: const Text('WebDAV 设置'),
                   subtitle: Text(_webDavStatus),

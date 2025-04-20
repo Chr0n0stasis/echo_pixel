@@ -9,7 +9,6 @@ import '../models/cloud_mapping.dart';
 import '../models/device_info.dart';
 import '../services/webdav_service.dart';
 import '../services/media_sync_service.dart';
-import '../services/media_index_service.dart';
 
 /// 设备管理页面 - 管理WebDAV上记录的设备
 class DeviceManagementPage extends StatefulWidget {
@@ -25,12 +24,6 @@ class _DeviceManagementPageState extends State<DeviceManagementPage> {
 
   // WebDAV服务
   late WebDavService _webdavService;
-
-  // 媒体同步服务
-  late MediaSyncService _mediaSyncService;
-
-  // 媒体索引服务
-  late MediaIndexService _mediaIndexService;
 
   // 设备列表
   List<CloudMediaMapping> _deviceMappings = [];
@@ -48,8 +41,6 @@ class _DeviceManagementPageState extends State<DeviceManagementPage> {
   void initState() {
     super.initState();
     _webdavService = Provider.of<WebDavService>(context, listen: false);
-    _mediaSyncService = Provider.of<MediaSyncService>(context, listen: false);
-    _mediaIndexService = Provider.of<MediaIndexService>(context, listen: false);
 
     _initializeDeviceManagement();
   }
@@ -487,41 +478,6 @@ class _DeviceManagementPageState extends State<DeviceManagementPage> {
     }
   }
 
-  // 显示进度对话框
-  _ProgressDialogController _showProgressDialog(String message) {
-    final controller = _ProgressDialogController();
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            controller._setState = setState;
-            controller._message = message;
-            controller._close = () {
-              Navigator.of(context).pop();
-            };
-
-            return AlertDialog(
-              title: const Text('处理中'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const CircularProgressIndicator(),
-                  const SizedBox(height: 16),
-                  Text(controller._message),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-
-    return controller;
-  }
-
   // 显示确认删除对话框
   Future<void> _showDeleteConfirmDialog(CloudMediaMapping deviceMapping) async {
     final result = await showDialog<String>(
@@ -889,24 +845,5 @@ class _DeviceManagementPageState extends State<DeviceManagementPage> {
     } else {
       return Icons.devices_other;
     }
-  }
-}
-
-// 进度对话框控制器，用于在处理过程中更新进度消息
-class _ProgressDialogController {
-  String _message = '';
-  late StateSetter _setState;
-  late Function _close;
-
-  // 更新进度消息
-  void update(String message) {
-    _setState(() {
-      _message = message;
-    });
-  }
-
-  // 关闭对话框
-  void close() {
-    _close();
   }
 }

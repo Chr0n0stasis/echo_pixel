@@ -30,18 +30,6 @@ class _WebDavStatusPageState extends State<WebDavStatusPage> {
   bool _isSyncing = false;
   String? _syncError;
 
-  // 同步步骤
-  final List<String> _syncSteps = [
-    '准备同步',
-    '上传本地映射表',
-    '下载并合并云端映射表',
-    '创建云端目录结构',
-    '上传文件',
-    '下载文件',
-    '保存同步状态',
-    '同步完成'
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -245,7 +233,7 @@ class _WebDavStatusPageState extends State<WebDavStatusPage> {
                   decoration: BoxDecoration(
                     color: Theme.of(context)
                         .colorScheme
-                        .background
+                        .surface
                         .withValues(alpha: 0.5),
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -579,6 +567,7 @@ class _WebDavStatusPageState extends State<WebDavStatusPage> {
     if (confirm && mounted) {
       // 调用同步服务的取消方法
       await _mediaSyncService.cancelSync();
+      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('已请求终止同步，系统将在完成当前步骤后中止')),
       );
@@ -633,10 +622,12 @@ class _WebDavStatusPageState extends State<WebDavStatusPage> {
         });
 
         // 显示提示
+        // ignore: use_build_context_synchronously
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('同步已被强制终止')),
         );
       } catch (e) {
+        // ignore: use_build_context_synchronously
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('终止同步失败: $e')),
         );

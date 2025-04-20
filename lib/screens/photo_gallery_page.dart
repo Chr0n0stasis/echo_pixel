@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:echo_pixel/screens/image_viewer_page.dart';
 import 'package:echo_pixel/screens/video_player_page.dart';
 import 'package:echo_pixel/screens/webdav_settings.dart';
@@ -89,7 +88,7 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
   bool _isLoading = true;
 
   // 是否正在增量加载更多
-  bool _isLoadingMore = false;
+  final bool _isLoadingMore = false;
 
   // 是否正在同步
   bool _isSyncing = false;
@@ -107,7 +106,6 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
   String? _syncError;
 
   // 当前正在上传的文件信息
-  String? _currentUploadInfo;
 
   // 按日期排序的媒体索引
   final List<MediaIndex> _sortedIndices = [];
@@ -861,7 +859,6 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
       _isSyncing = true;
       _syncProgress = 0;
       _syncError = null;
-      _currentUploadInfo = "正在准备同步...";
     });
 
     // 启动进度更新定时器 - 每500毫秒更新一次进度
@@ -909,7 +906,6 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
           _isSyncing = false;
           _syncProgress = _mediaSyncService.syncProgress;
           _syncError = _mediaSyncService.syncError;
-          _currentUploadInfo = success ? "同步完成" : "同步失败";
         });
 
         // 取消进度更新定时器
@@ -934,7 +930,6 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
         setState(() {
           _isSyncing = false;
           _syncError = e.toString();
-          _currentUploadInfo = "同步出错: ${e.toString()}";
         });
 
         // 取消进度更新定时器
@@ -954,9 +949,7 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
   // 更新同步状态信息到界面
   void _updateSyncStatus(String status) {
     if (mounted) {
-      setState(() {
-        _currentUploadInfo = status;
-      });
+      setState(() {});
     }
     debugPrint('同步状态: $status');
   }
