@@ -1,13 +1,15 @@
+import 'package:EchoPixel/screens/media_scan_settings_page.dart';
 import 'package:device_info_plus/device_info_plus.dart';
-import 'package:echo_pixel/screens/device_management_page.dart';
-import 'package:echo_pixel/screens/webdav_status_page.dart';
-import 'package:echo_pixel/services/thumbnail_service.dart';
+import 'package:EchoPixel/screens/device_management_page.dart';
+import 'package:EchoPixel/screens/webdav_status_page.dart';
+import 'package:EchoPixel/services/thumbnail_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:io' show Platform;
 import 'package:media_kit/media_kit.dart'; // 导入MediaKit
 import 'package:permission_handler/permission_handler.dart'; // 导入权限处理包
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'services/theme_service.dart';
 import 'services/preview_quality_service.dart'; // 导入预览质量服务
 import 'services/webdav_service.dart'; // 导入WebDAV服务
@@ -43,6 +45,9 @@ void main() async {
     await requestPermissions();
   }
 
+  // 初始化SharedPreferences
+  await initPrefs();
+
   runApp(
     // 使用Provider提供服务
     MultiProvider(
@@ -62,6 +67,17 @@ void main() async {
       child: const MyApp(),
     ),
   );
+}
+
+Future<void> initPrefs() async {
+  // 初始化SharedPreferences
+  final prefs = await SharedPreferences.getInstance();
+  final defaultMediaFolders =
+      await MediaScanSettingsPage.getDefaultMediaFolders();
+  if (prefs.getStringList('scan_folders') == null) {
+    // 如果没有存储的扫描文件夹，则设置默认值
+    await prefs.setStringList('scan_folders', defaultMediaFolders);
+  }
 }
 
 // 请求所需的权限

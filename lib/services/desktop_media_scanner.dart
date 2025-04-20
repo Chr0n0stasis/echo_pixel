@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:echo_pixel/services/media_sync_service.dart';
+import 'package:EchoPixel/services/media_sync_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 import 'package:crypto/crypto.dart';

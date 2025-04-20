@@ -10,6 +10,42 @@ class MediaScanSettingsPage extends StatefulWidget {
 
   @override
   State<MediaScanSettingsPage> createState() => _MediaScanSettingsPageState();
+
+  /// 获取默认的媒体扫描文件夹
+  /// 返回平台特定的默认媒体文件夹路径列表
+  static Future<List<String>> getDefaultMediaFolders() async {
+    List<String> defaultFolders = [];
+
+    try {
+      if (Platform.isAndroid) {
+        // Android平台的默认媒体目录
+        final externalDir = await getExternalStorageDirectory();
+        if (externalDir != null) {
+          final dcimDir = Directory('${externalDir.path}/../DCIM');
+          final picturesDir = Directory('${externalDir.path}/../Pictures');
+
+          if (await dcimDir.exists()) {
+            defaultFolders.add(dcimDir.path);
+          }
+          if (await picturesDir.exists()) {
+            defaultFolders.add(picturesDir.path);
+          }
+        }
+      } else if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
+        // 桌面平台的默认媒体目录
+        final homeDir = Platform.isWindows
+            ? Platform.environment['USERPROFILE'] ?? ''
+            : Platform.environment['HOME'] ?? '';
+
+        defaultFolders.add(path.join(homeDir, 'Pictures'));
+        defaultFolders.add(path.join(homeDir, 'Videos'));
+      }
+    } catch (e) {
+      debugPrint('获取默认媒体文件夹错误: $e');
+    }
+
+    return defaultFolders;
+  }
 }
 
 class _MediaScanSettingsPageState extends State<MediaScanSettingsPage> {
@@ -67,39 +103,14 @@ class _MediaScanSettingsPageState extends State<MediaScanSettingsPage> {
     _scanFolders.clear();
 
     try {
-      if (Platform.isAndroid) {
-        // Android平台的默认媒体目录
-        final externalDir = await getExternalStorageDirectory();
-        if (externalDir != null) {
-          final dcimDir = Directory('${externalDir.path}/../DCIM');
-          final picturesDir = Directory('${externalDir.path}/../Pictures');
-
-          if (await dcimDir.exists()) {
-            _scanFolders.add(dcimDir.path);
-          }
-          if (await picturesDir.exists()) {
-            _scanFolders.add(picturesDir.path);
-          }
-        }
-      } else if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
-        // 桌面平台的默认媒体目录
-        final homeDir = _getUserHomeDirectory();
-
-        _scanFolders.add(path.join(homeDir, 'Pictures'));
-        _scanFolders.add(path.join(homeDir, 'Videos'));
-      }
+      // 使用公开方法获取默认文件夹
+      final defaultFolders =
+          await MediaScanSettingsPage.getDefaultMediaFolders();
+      _scanFolders.addAll(defaultFolders);
 
       await _saveScanFolders();
     } catch (e) {
       debugPrint('添加默认文件夹错误: $e');
-    }
-  }
-
-  String _getUserHomeDirectory() {
-    if (Platform.isWindows) {
-      return Platform.environment['USERPROFILE'] ?? '';
-    } else {
-      return Platform.environment['HOME'] ?? '';
     }
   }
 

@@ -1,6 +1,6 @@
 {
-    "name": "echo_pixel",
-    "short_name": "echo_pixel",
+    "name": "EchoPixel",
+    "short_name": "EchoPixel",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#hexcode",

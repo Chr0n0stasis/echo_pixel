@@ -1,4 +1,4 @@
-package io.github.shadow3.echo_pixel
+package io.github.shadow3.EchoPixel
 
 import io.flutter.embedding.android.FlutterActivity
 

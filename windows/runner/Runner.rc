@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "io.github.shadow3" "\0"
-            VALUE "FileDescription", "echo_pixel" "\0"
+            VALUE "FileDescription", "EchoPixel" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "echo_pixel" "\0"
+            VALUE "InternalName", "EchoPixel" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2025 io.github.shadow3. All rights reserved." "\0"
-            VALUE "OriginalFilename", "echo_pixel.exe" "\0"
-            VALUE "ProductName", "echo_pixel" "\0"
+            VALUE "OriginalFilename", "EchoPixel.exe" "\0"
+            VALUE "ProductName", "EchoPixel" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

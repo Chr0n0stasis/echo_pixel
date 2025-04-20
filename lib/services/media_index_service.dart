@@ -170,8 +170,8 @@ class MediaIndexService extends ChangeNotifier {
         await _saveToCache();
 
         return true;
-      } catch (e) {
-        _scanError = e.toString();
+      } catch (e, stack) {
+        _scanError = '$e\n$stack'; // 包含异常和堆栈信息
         debugPrint('扫描媒体文件出错: $_scanError');
         notifyListeners();
         return false;
