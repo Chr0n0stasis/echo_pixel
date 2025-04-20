@@ -3,13 +3,34 @@ import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as path;
 
+class MediaFile {
+  MediaFileInfo info;
+  bool isLocal;
+
+  MediaFile({required this.info, this.isLocal = true});
+
+  Map<String, dynamic> toJson() {
+    return {
+      'info': info.toJson(),
+      'isLocal': isLocal,
+    };
+  }
+
+  factory MediaFile.fromJson(Map<String, dynamic> json) {
+    return MediaFile(
+      info: MediaFileInfo.fromJson(json['info']),
+      isLocal: json['isLocal'] ?? true,
+    );
+  }
+}
+
 /// 按时间索引的媒体文件结构
 class MediaIndex {
   /// 使用年月日作为主键
   final String datePath;
 
   /// 当天的所有媒体文件
-  final List<MediaFileInfo> mediaFiles;
+  final List<MediaFile> mediaFiles;
 
   MediaIndex({required this.datePath, required this.mediaFiles});
 
@@ -43,21 +64,19 @@ class MediaIndex {
     return DateFormat('yyyy年MM月dd日').format(dateTime);
   }
 
-  /// 转换为JSON
   Map<String, dynamic> toJson() {
     return {
       'datePath': datePath,
-      'mediaFiles': mediaFiles.map((file) => file.toJson()).toList(),
+      'mediaFiles': mediaFiles.map((f) => f.toJson()).toList(),
     };
   }
 
   /// 从JSON创建对象
   factory MediaIndex.fromJson(Map<String, dynamic> json) {
-    final List<dynamic> filesList = json['mediaFiles'];
     return MediaIndex(
       datePath: json['datePath'],
-      mediaFiles: filesList
-          .map((fileJson) => MediaFileInfo.fromJson(fileJson))
+      mediaFiles: (json['mediaFiles'] as List)
+          .map((item) => MediaFile.fromJson(item))
           .toList(),
     );
   }

@@ -57,12 +57,14 @@ class DesktopMediaScanner {
 
       final prefs = await SharedPreferences.getInstance();
       final scanFolders = prefs.getStringList('scan_folders');
+      final cloudMediaFolder = await getAppMediaDirectory();
 
       // 要扫描的目录列表
       final List<Directory> dirsToScan = scanFolders != null
           ? scanFolders.map((folder) => Directory(folder)).toList()
           : [];
-      dirsToScan.add(await getAppMediaDirectory());
+      // 添加云端媒体目录
+      dirsToScan.add(cloudMediaFolder);
 
       debugPrint('扫描目录: ${scanFolders!.join(', ')}');
 
@@ -242,7 +244,9 @@ class DesktopMediaScanner {
       }
 
       // 添加到对应日期的索引中
-      _mediaIndices[datePath]!.mediaFiles.add(mediaInfo);
+      _mediaIndices[datePath]!
+          .mediaFiles
+          .add(MediaFile(info: mediaInfo, isLocal: !isCloudSyncedFile));
     } catch (e) {
       debugPrint('处理媒体文件出错: ${file.path}, $e');
       // 抛出异常，让调用者处理

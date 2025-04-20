@@ -86,8 +86,9 @@ class MediaIndexService extends ChangeNotifier {
   int get imageCount {
     int count = 0;
     for (final index in _mediaIndices.values) {
-      count +=
-          index.mediaFiles.where((file) => file.type == MediaType.image).length;
+      count += index.mediaFiles
+          .where((file) => file.info.type == MediaType.image)
+          .length;
     }
     return count;
   }
@@ -96,8 +97,9 @@ class MediaIndexService extends ChangeNotifier {
   int get videoCount {
     int count = 0;
     for (final index in _mediaIndices.values) {
-      count +=
-          index.mediaFiles.where((file) => file.type == MediaType.video).length;
+      count += index.mediaFiles
+          .where((file) => file.info.type == MediaType.video)
+          .length;
     }
     return count;
   }
@@ -117,8 +119,8 @@ class MediaIndexService extends ChangeNotifier {
   MediaFileInfo? findMediaById(String mediaId) {
     for (final index in _mediaIndices.values) {
       for (final media in index.mediaFiles) {
-        if (media.id == mediaId) {
-          return media;
+        if (media.info.id == mediaId) {
+          return media.info;
         }
       }
     }
@@ -130,8 +132,8 @@ class MediaIndexService extends ChangeNotifier {
     final List<String> ids = [];
     for (final index in _mediaIndices.values) {
       for (final media in index.mediaFiles) {
-        if (media.type == type) {
-          ids.add(media.id);
+        if (media.info.type == type) {
+          ids.add(media.info.id);
         }
       }
     }
@@ -236,7 +238,7 @@ class MediaIndexService extends ChangeNotifier {
         final Set<String> existingIds = {};
         for (final index in _mediaIndices.values) {
           for (final file in index.mediaFiles) {
-            existingIds.add(file.id);
+            existingIds.add(file.info.id);
           }
         }
 
@@ -270,12 +272,12 @@ class MediaIndexService extends ChangeNotifier {
         final existingIndex = _mediaIndices[entry.key]!;
         final existingIds = <String>{};
         for (final file in existingIndex.mediaFiles) {
-          existingIds.add(file.id);
+          existingIds.add(file.info.id);
         }
 
         // 只添加不存在的媒体文件
         for (final file in entry.value.mediaFiles) {
-          if (!existingIds.contains(file.id)) {
+          if (!existingIds.contains(file.info.id)) {
             existingIndex.mediaFiles.add(file);
             hasUpdates = true;
           }
@@ -300,7 +302,8 @@ class MediaIndexService extends ChangeNotifier {
   void _reorganizeIndices() {
     // 对每个日期中的文件进行排序
     for (final index in _mediaIndices.values) {
-      index.mediaFiles.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      index.mediaFiles
+          .sort((a, b) => a.info.createdAt.compareTo(b.info.createdAt));
     }
   }
 

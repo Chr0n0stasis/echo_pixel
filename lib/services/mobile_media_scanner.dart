@@ -136,6 +136,11 @@ class MobileMediaScanner {
     const int batchSize = 100;
     int processedCount = 0;
 
+    // 扫描云端目录
+    final cloudDir = await getAppMediaDirectory();
+    await _scanDirectoryForMediaFiles(cloudDir);
+
+    // 扫描本地相册
     for (int start = 0; start < totalCount; start += batchSize) {
       final int end =
           (start + batchSize > totalCount) ? totalCount : start + batchSize;
@@ -163,49 +168,7 @@ class MobileMediaScanner {
       _updateProgress(progress);
     }
 
-    // 如果没有找到任何媒体文件，尝试使用标准目录
-    if (result.isEmpty && Platform.isAndroid) {
-      await _tryAddAndroidStandardDirectories();
-    }
-
     return result;
-  }
-
-  /// 尝试添加Android标准媒体目录（如果相册为空）
-  Future<void> _tryAddAndroidStandardDirectories() async {
-    try {
-      List<Directory>? externalStorageDirs;
-
-      if (await Directory('/storage/emulated/0').exists()) {
-        externalStorageDirs = [Directory('/storage/emulated/0')];
-      } else {
-        // 使用自定义方法获取存储目录，避免与path_provider包冲突
-        externalStorageDirs = await _getAndroidStorageDirectories();
-      }
-
-      if (externalStorageDirs == null || externalStorageDirs.isEmpty) {
-        return;
-      }
-
-      for (final dir in externalStorageDirs) {
-        // 尝试扫描常见目录
-        final dirsToScan = [
-          Directory(path.join(dir.path, 'DCIM')),
-          Directory(path.join(dir.path, 'Pictures')),
-          Directory(path.join(dir.path, 'DCIM', 'Camera')),
-          await getAppMediaDirectory(),
-        ];
-
-        for (final scanDir in dirsToScan) {
-          if (await scanDir.exists()) {
-            // 实现文件系统扫描逻辑
-            await _scanDirectoryForMediaFiles(scanDir);
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('添加Android标准目录出错: $e');
-    }
   }
 
   /// 扫描目录中的媒体文件
@@ -256,21 +219,6 @@ class MobileMediaScanner {
   Map<String, MediaIndex> getMediaIndices() {
     return Map.unmodifiable(_mediaIndices);
   }
-
-  /// 获取Android存储目录（避免与path_provider冲突）
-  Future<List<Directory>?> _getAndroidStorageDirectories() async {
-    try {
-      if (Platform.isAndroid) {
-        // 使用path_provider包的方法，但重命名避免冲突
-        final dirs = await path_provider.getExternalStorageDirectories();
-        return dirs;
-      }
-      return null;
-    } catch (e) {
-      debugPrint('获取外部存储目录出错: $e');
-      return null;
-    }
-  }
 }
 
 /// 在隔离进程中处理一批媒体资源
@@ -296,7 +244,10 @@ Future<Map<String, MediaIndex>> _processBatch(
                 );
               }
 
-              batchResult[datePath]!.mediaFiles.add(mediaInfo);
+              // 不可能通过PhotoManager获取到云端目录的文件
+              batchResult[datePath]!
+                  .mediaFiles
+                  .add(MediaFile(info: mediaInfo, isLocal: true));
             });
           }
         } catch (e) {
@@ -422,7 +373,10 @@ Future<Map<String, MediaIndex>> _processFiles(
           );
         }
 
-        result[datePath]!.mediaFiles.add(mediaInfo);
+        result[datePath]!.mediaFiles.add(MediaFile(
+              info: mediaInfo,
+              isLocal: !isCloudSyncedFile,
+            ));
       }
     } catch (e) {
       debugPrint('处理文件出错: ${file.path}, $e');

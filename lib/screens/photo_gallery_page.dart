@@ -373,7 +373,8 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
 
       // 对每个日期中的文件进行排序
       for (final index in _sortedIndices) {
-        index.mediaFiles.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        index.mediaFiles
+            .sort((a, b) => b.info.createdAt.compareTo(a.info.createdAt));
       }
     });
   }
@@ -581,7 +582,7 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
           itemCount: sortedFiles.length,
           itemBuilder: (context, index) {
             final mediaFile = sortedFiles[index];
-            return _buildMediaThumbnail(mediaFile);
+            return _buildMediaThumbnail(mediaFile.info);
           },
         ),
 
@@ -753,18 +754,18 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
     } else if (mediaFile.type == MediaType.image) {
       // 查找当前图片所在的日期索引
       final currentDateIndex = _sortedIndices.firstWhereOrNull(
-        (index) => index.mediaFiles.any((file) => file.id == mediaFile.id),
+        (index) => index.mediaFiles.any((file) => file.info.id == mediaFile.id),
       );
 
       if (currentDateIndex != null) {
         // 过滤出该日期下的所有图片，以支持左右滑动浏览
         final imagesInSameGroup = currentDateIndex.mediaFiles
-            .where((file) => file.type == MediaType.image)
+            .where((file) => file.info.type == MediaType.image)
             .toList();
 
         // 找到当前图片在列表中的索引
         final initialIndex = imagesInSameGroup.indexWhere(
-          (file) => file.id == mediaFile.id,
+          (file) => file.info.id == mediaFile.id,
         );
 
         if (initialIndex != -1) {
@@ -773,7 +774,7 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
             MaterialPageRoute(
               builder: (context) => ImageViewerPage(
                 mediaFile: mediaFile,
-                mediaFiles: imagesInSameGroup,
+                mediaFiles: imagesInSameGroup.map((file) => file.info).toList(),
                 initialIndex: initialIndex,
               ),
             ),

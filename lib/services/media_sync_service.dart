@@ -218,6 +218,10 @@ class MediaSyncService {
         onSyncStatusUpdate!('扫描进度: $progress%');
       }
     }, onScanComplete: (indices) {
+      for (var media in indices.values) {
+        // 仅保留本地文件
+        media.mediaFiles.retainWhere((file) => file.isLocal);
+      }
       _mediaIndices.addAll(indices);
       if (onSyncStatusUpdate != null) {
         onSyncStatusUpdate!('扫描完成，发现 ${indices.length} 个媒体分组');
@@ -301,6 +305,10 @@ class MediaSyncService {
       if (_isDesktopPlatform()) {
         // 桌面平台 - 使用桌面媒体扫描器
         final desktopIndices = await _desktopScanner.scanDesktopMedia();
+        for (var media in desktopIndices.values) {
+          // 仅保留本地文件
+          media.mediaFiles.retainWhere((file) => file.isLocal);
+        }
         _mediaIndices.addAll(desktopIndices);
         _syncProgress = _desktopScanner.scanProgress;
         _syncError = _desktopScanner.scanError;
@@ -403,7 +411,7 @@ class MediaSyncService {
     // 收集所有媒体文件
     final allMediaFiles = <MediaFileInfo>[];
     for (final stepIndex in _mediaIndices.values) {
-      allMediaFiles.addAll(stepIndex.mediaFiles);
+      allMediaFiles.addAll(stepIndex.mediaFiles.map((media) => media.info));
     }
 
     // 更新映射
@@ -1035,7 +1043,7 @@ class MediaSyncService {
   List<MediaFileInfo> getAllMediaFiles() {
     final allFiles = <MediaFileInfo>[];
     for (final stepIndex in _mediaIndices.values) {
-      allFiles.addAll(stepIndex.mediaFiles);
+      allFiles.addAll(stepIndex.mediaFiles.map((media) => media.info));
     }
     return allFiles;
   }
