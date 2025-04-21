@@ -42,7 +42,7 @@ class ThumbnailService {
   final Map<String, Uint8List> _imageCache = {};
 
   /// 限制缩略图生成的并发数量
-  final Pool _generationPool = Pool(8);
+  final Pool _generationPool = Pool(4);
 
   /// 初始化服务
   Future<void> _initialize() async {
