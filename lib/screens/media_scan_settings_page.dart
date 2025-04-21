@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
@@ -45,6 +46,12 @@ class MediaScanSettingsPage extends StatefulWidget {
     }
 
     return defaultFolders;
+  }
+
+  /// 判断是否为桌面平台
+  static bool isDesktopPlatform() {
+    return !kIsWeb &&
+        (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
   }
 }
 
@@ -200,66 +207,67 @@ class _MediaScanSettingsPageState extends State<MediaScanSettingsPage> {
           : ListView(
               padding: const EdgeInsets.all(16.0),
               children: [
-                // 扫描文件夹列表
-                Card(
-                  margin: const EdgeInsets.only(bottom: 16.0),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          '扫描文件夹',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          '选择要扫描媒体文件的文件夹',
-                          style: TextStyle(fontSize: 14),
-                        ),
-                        const SizedBox(height: 16),
-                        if (_scanFolders.isEmpty)
-                          const Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(16.0),
-                              child: Text('没有扫描文件夹，点击下方按钮添加'),
+                // 扫描文件夹列表 - 只在桌面平台显示
+                if (MediaScanSettingsPage.isDesktopPlatform())
+                  Card(
+                    margin: const EdgeInsets.only(bottom: 16.0),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '扫描文件夹',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
                             ),
-                          )
-                        else
-                          ListView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: _scanFolders.length,
-                            itemBuilder: (context, index) {
-                              final folder = _scanFolders[index];
-                              return ListTile(
-                                leading: const Icon(Icons.folder),
-                                title: Text(
-                                  folder,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                trailing: IconButton(
-                                  icon: const Icon(Icons.delete),
-                                  onPressed: () => _removeScanFolder(index),
-                                ),
-                              );
-                            },
                           ),
-                        const SizedBox(height: 16),
-                        Center(
-                          child: ElevatedButton.icon(
-                            icon: const Icon(Icons.add),
-                            label: const Text('添加文件夹'),
-                            onPressed: _addScanFolder,
+                          const SizedBox(height: 8),
+                          const Text(
+                            '选择要扫描媒体文件的文件夹',
+                            style: TextStyle(fontSize: 14),
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 16),
+                          if (_scanFolders.isEmpty)
+                            const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(16.0),
+                                child: Text('没有扫描文件夹，点击下方按钮添加'),
+                              ),
+                            )
+                          else
+                            ListView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: _scanFolders.length,
+                              itemBuilder: (context, index) {
+                                final folder = _scanFolders[index];
+                                return ListTile(
+                                  leading: const Icon(Icons.folder),
+                                  title: Text(
+                                    folder,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  trailing: IconButton(
+                                    icon: const Icon(Icons.delete),
+                                    onPressed: () => _removeScanFolder(index),
+                                  ),
+                                );
+                              },
+                            ),
+                          const SizedBox(height: 16),
+                          Center(
+                            child: ElevatedButton.icon(
+                              icon: const Icon(Icons.add),
+                              label: const Text('添加文件夹'),
+                              onPressed: _addScanFolder,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
 
                 // 扫描设置
                 Card(
@@ -314,6 +322,38 @@ class _MediaScanSettingsPageState extends State<MediaScanSettingsPage> {
                     ),
                   ),
                 ),
+
+                // 移动端设备说明
+                if (!MediaScanSettingsPage.isDesktopPlatform())
+                  Card(
+                    margin: const EdgeInsets.only(bottom: 16.0),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: const [
+                          Text(
+                            '移动设备媒体访问',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          SizedBox(height: 12),
+                          Text(
+                            '在移动设备上，应用会自动使用系统媒体库中的照片和视频，无需手动选择扫描文件夹。',
+                            style: TextStyle(fontSize: 14),
+                          ),
+                          SizedBox(height: 8),
+                          Text(
+                            '请确保已授予应用访问照片和媒体的权限。',
+                            style:
+                                TextStyle(fontSize: 14, color: Colors.orange),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
               ],
             ),
     );

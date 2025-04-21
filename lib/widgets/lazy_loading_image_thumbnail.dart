@@ -1,7 +1,9 @@
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../services/thumbnail_service.dart';
 import '../services/preview_quality_service.dart';
+import '../widgets/gif_player.dart';
 
 /// 懒加载图片缩略图组件 - 使用ThumbnailService生成缩略图
 class LazyLoadingImageThumbnail extends StatefulWidget {
@@ -28,11 +30,18 @@ class _LazyLoadingImageThumbnailState extends State<LazyLoadingImageThumbnail> {
   Uint8List? _thumbnailData;
   bool _isLoading = true;
   bool _hasError = false;
+  bool _isGif = false;
 
   @override
   void initState() {
     super.initState();
+    _checkIfGif();
     _loadThumbnail();
+  }
+
+  void _checkIfGif() {
+    // 检查是否为GIF文件
+    _isGif = widget.imagePath.toLowerCase().endsWith('.gif');
   }
 
   @override
@@ -43,6 +52,7 @@ class _LazyLoadingImageThumbnailState extends State<LazyLoadingImageThumbnail> {
     if (oldWidget.imagePath != widget.imagePath ||
         oldWidget.previewQualityService.isHighQuality !=
             widget.previewQualityService.isHighQuality) {
+      _checkIfGif();
       _loadThumbnail();
     }
   }
@@ -105,7 +115,38 @@ class _LazyLoadingImageThumbnailState extends State<LazyLoadingImageThumbnail> {
       );
     }
 
-    // 显示缩略图
+    // 如果是GIF，则使用缩略图作为静态预览
+    if (_isGif) {
+      return Stack(
+        alignment: Alignment.center,
+        children: [
+          // 显示缩略图作为背景
+          Image.memory(
+            _thumbnailData!,
+            fit: widget.fit,
+            filterQuality: widget.previewQualityService.imageFilterQuality,
+          ),
+          // 叠加GIF标志
+          Positioned(
+            right: 4,
+            top: 4,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.6),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: const Text(
+                'GIF',
+                style: TextStyle(color: Colors.white, fontSize: 10),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    // 显示普通图片缩略图
     return Image.memory(
       _thumbnailData!,
       fit: widget.fit,

@@ -146,12 +146,6 @@ class _HomeScreenState extends State<HomeScreen> {
   // 对相册页面的引用，用于后续控制
   late final PhotoGalleryPage _photoGalleryPage;
 
-  // 判断是否是桌面平台
-  bool get isDesktop {
-    if (kIsWeb) return false; // 网页版使用移动端布局
-    return !Platform.isAndroid && !Platform.isIOS;
-  }
-
   // 判断设备方向
   bool isLandscape(BuildContext context) {
     return MediaQuery.of(context).orientation == Orientation.landscape;
@@ -248,7 +242,7 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('相册'),
         onTap: () {
           _onItemTapped(0);
-          if (!isDesktop) Navigator.pop(context);
+          if (!isDesktopPlatform()) Navigator.pop(context);
         },
       ),
       ListTile(
@@ -257,7 +251,7 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('WebDAV'),
         onTap: () {
           _onItemTapped(1);
-          if (!isDesktop) Navigator.pop(context);
+          if (!isDesktopPlatform()) Navigator.pop(context);
         },
       ),
       ListTile(
@@ -266,7 +260,7 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('设备管理'),
         onTap: () {
           _onItemTapped(2);
-          if (!isDesktop) Navigator.pop(context);
+          if (!isDesktopPlatform()) Navigator.pop(context);
         },
       ),
       const Divider(),
@@ -276,7 +270,7 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('设置'),
         onTap: () {
           _onItemTapped(3);
-          if (!isDesktop) Navigator.pop(context);
+          if (!isDesktopPlatform()) Navigator.pop(context);
         },
       ),
       const Divider(),
@@ -286,7 +280,7 @@ class _HomeScreenState extends State<HomeScreen> {
         onTap: () {
           // 触发同步
           PhotoGalleryPage.controller.syncWithWebDav();
-          if (!isDesktop) Navigator.pop(context);
+          if (!isDesktopPlatform()) Navigator.pop(context);
         },
       ),
       const Divider(),
@@ -334,7 +328,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
         ],
       ),
-      drawer: isDesktop || isTabletOrLarger
+      drawer: isDesktopPlatform() || isTabletOrLarger
           ? null
           : Drawer(
               child: ListView(
@@ -345,9 +339,10 @@ class _HomeScreenState extends State<HomeScreen> {
       body: Row(
         children: [
           // 在桌面端或平板横屏模式显示永久侧边栏
-          if (isDesktop || (isTabletOrLarger && isLandscape(context)))
+          if (isDesktopPlatform() || (isTabletOrLarger && isLandscape(context)))
             NavigationRail(
-              extended: isDesktop || MediaQuery.of(context).size.width > 800,
+              extended: isDesktopPlatform() ||
+                  MediaQuery.of(context).size.width > 800,
               destinations: const [
                 NavigationRailDestination(
                   icon: Icon(Icons.photo_library),
@@ -375,7 +370,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       // 在移动端显示底部导航栏，桌面端不显示
       bottomNavigationBar:
-          (!isDesktop && (!isTabletOrLarger || !isLandscape(context)))
+          (!isDesktopPlatform() && (!isTabletOrLarger || !isLandscape(context)))
               ? BottomNavigationBar(
                   items: _bottomNavItems,
                   currentIndex: _selectedIndex,
@@ -385,4 +380,9 @@ class _HomeScreenState extends State<HomeScreen> {
               : null,
     );
   }
+}
+
+bool isDesktopPlatform() {
+  return !kIsWeb &&
+      (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
 }

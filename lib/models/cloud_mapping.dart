@@ -173,6 +173,8 @@ class MediaMapping {
         return SyncStatus.pendingUpload;
       case 'pendingDownload':
         return SyncStatus.pendingDownload;
+      case 'pendingDelete':
+        return SyncStatus.pendingDelete;
       case 'conflict':
         return SyncStatus.conflict;
       case 'error':
@@ -208,6 +210,9 @@ enum SyncStatus {
   /// 等待从云端下载
   pendingDownload,
 
+  /// 等待删除（本地已删除，需要在云端删除）
+  pendingDelete,
+
   /// 存在冲突（本地和云端均有更改）
   conflict,
 
@@ -229,6 +234,8 @@ extension SyncStatusExtension on SyncStatus {
         return Colors.blue;
       case SyncStatus.pendingDownload:
         return Colors.orange;
+      case SyncStatus.pendingDelete:
+        return Colors.purple;
       case SyncStatus.conflict:
         return Colors.amber;
       case SyncStatus.error:
@@ -247,6 +254,8 @@ extension SyncStatusExtension on SyncStatus {
         return Icons.cloud_upload;
       case SyncStatus.pendingDownload:
         return Icons.cloud_download;
+      case SyncStatus.pendingDelete:
+        return Icons.delete;
       case SyncStatus.conflict:
         return Icons.warning;
       case SyncStatus.error:

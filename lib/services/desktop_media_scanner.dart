@@ -172,7 +172,6 @@ class DesktopMediaScanner {
 
       // 检查文件路径是否包含从云端同步的标志（例如应用专属目录中的文件）
       final appDir = await getApplicationSupportDirectory();
-      debugPrint('文件路径: $filePath');
       final bool isCloudSyncedFile =
           filePath.contains('${appDir.path}${Platform.pathSeparator}media');
 

@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/media_index.dart';
+import '../widgets/gif_player.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
 import 'package:share_plus/share_plus.dart';
@@ -83,6 +84,11 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     );
   }
 
+  // 检查当前查看的文件是否为GIF
+  bool _isGifFile(MediaFileInfo file) {
+    return file.originalPath.toLowerCase().endsWith('.gif');
+  }
+
   @override
   Widget build(BuildContext context) {
     // 如果提供了媒体文件列表，使用Gallery模式
@@ -91,17 +97,38 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
     final List<MediaFileInfo> files =
         isGalleryMode ? widget.mediaFiles! : [widget.mediaFile];
 
+    // 检查当前文件是否为GIF
+    final bool isCurrentGif = _isGifFile(files[_currentIndex]);
+
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: _isControlsVisible && !_isFullScreen
           ? AppBar(
-              backgroundColor: Colors.black.withValues(alpha: 0.5),
+              backgroundColor: Colors.black.withOpacity(0.5),
               foregroundColor: Colors.white,
               title: Text(
                 path.basename(files[_currentIndex].originalPath),
                 style: const TextStyle(fontSize: 16),
               ),
               actions: [
+                // 如果是GIF，显示GIF标签
+                if (isCurrentGif)
+                  Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.purple.withOpacity(0.7),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'GIF',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
                 IconButton(
                   icon: Icon(
                       _isFullScreen ? Icons.fullscreen_exit : Icons.fullscreen),
@@ -119,42 +146,67 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
       extendBodyBehindAppBar: true,
       body: GestureDetector(
         onTap: _toggleControls,
-        child: PhotoViewGallery.builder(
-          scrollPhysics: const BouncingScrollPhysics(),
-          builder: (context, index) {
-            return PhotoViewGalleryPageOptions(
-              imageProvider: FileImage(File(files[index].originalPath)),
-              initialScale: PhotoViewComputedScale.contained,
-              minScale: PhotoViewComputedScale.contained * 0.8,
-              maxScale: PhotoViewComputedScale.covered * 2.0,
-              heroAttributes:
-                  PhotoViewHeroAttributes(tag: 'media_${files[index].id}'),
-            );
-          },
-          itemCount: files.length,
-          loadingBuilder: (context, event) => Center(
-            child: SizedBox(
-              width: 20.0,
-              height: 20.0,
-              child: CircularProgressIndicator(
-                value: event == null
-                    ? 0
-                    : event.cumulativeBytesLoaded / event.expectedTotalBytes!,
-              ),
-            ),
-          ),
-          backgroundDecoration: const BoxDecoration(color: Colors.black),
-          pageController: _pageController,
-          onPageChanged: (index) {
-            setState(() {
-              _currentIndex = index;
-            });
-          },
-        ),
+        child: isGalleryMode
+            ? PhotoViewGallery.builder(
+                scrollPhysics: const BouncingScrollPhysics(),
+                builder: (context, index) {
+                  final MediaFileInfo file = files[index];
+                  final bool isGif = _isGifFile(file);
+
+                  // 根据文件类型选择不同的显示组件
+                  if (isGif) {
+                    return PhotoViewGalleryPageOptions.customChild(
+                      child: Center(
+                        child: GifPlayer(
+                          filePath: file.originalPath,
+                          fit: BoxFit.contain,
+                          autoPlay: true,
+                          filterQuality: FilterQuality.high,
+                        ),
+                      ),
+                      minScale: PhotoViewComputedScale.contained * 0.8,
+                      maxScale: PhotoViewComputedScale.covered * 2.0,
+                      heroAttributes:
+                          PhotoViewHeroAttributes(tag: 'media_${file.id}'),
+                    );
+                  } else {
+                    // 普通图片使用标准PhotoView
+                    return PhotoViewGalleryPageOptions(
+                      imageProvider: FileImage(File(file.originalPath)),
+                      initialScale: PhotoViewComputedScale.contained,
+                      minScale: PhotoViewComputedScale.contained * 0.8,
+                      maxScale: PhotoViewComputedScale.covered * 2.0,
+                      heroAttributes:
+                          PhotoViewHeroAttributes(tag: 'media_${file.id}'),
+                    );
+                  }
+                },
+                itemCount: files.length,
+                loadingBuilder: (context, event) => Center(
+                  child: SizedBox(
+                    width: 20.0,
+                    height: 20.0,
+                    child: CircularProgressIndicator(
+                      value: event == null
+                          ? 0
+                          : event.cumulativeBytesLoaded /
+                              event.expectedTotalBytes!,
+                    ),
+                  ),
+                ),
+                backgroundDecoration: const BoxDecoration(color: Colors.black),
+                pageController: _pageController,
+                onPageChanged: (index) {
+                  setState(() {
+                    _currentIndex = index;
+                  });
+                },
+              )
+            : _buildSingleImageView(files[0]), // 单图模式
       ),
       bottomNavigationBar: _isControlsVisible && isGalleryMode && !_isFullScreen
           ? BottomAppBar(
-              color: Colors.black.withValues(alpha: 0.5),
+              color: Colors.black.withOpacity(0.5),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -167,5 +219,32 @@ class _ImageViewerPageState extends State<ImageViewerPage> {
             )
           : null,
     );
+  }
+
+  // 构建单图查看模式
+  Widget _buildSingleImageView(MediaFileInfo file) {
+    final bool isGif = _isGifFile(file);
+
+    if (isGif) {
+      // GIF文件使用GifPlayer
+      return Center(
+        child: GifPlayer(
+          filePath: file.originalPath,
+          fit: BoxFit.contain,
+          autoPlay: true,
+          filterQuality: FilterQuality.high,
+        ),
+      );
+    } else {
+      // 普通图片使用PhotoView
+      return PhotoView(
+        imageProvider: FileImage(File(file.originalPath)),
+        initialScale: PhotoViewComputedScale.contained,
+        minScale: PhotoViewComputedScale.contained * 0.8,
+        maxScale: PhotoViewComputedScale.covered * 2.0,
+        backgroundDecoration: const BoxDecoration(color: Colors.black),
+        heroAttributes: PhotoViewHeroAttributes(tag: 'media_${file.id}'),
+      );
+    }
   }
 }

@@ -20,10 +20,11 @@ enum SyncStep {
   uploadingMapping(1, '上传本地映射表'),
   downloadingMappings(2, '下载并合并云端映射表'),
   creatingDirectories(3, '创建云端目录结构'),
-  uploadingFiles(4, '上传文件'),
-  downloadingFiles(5, '下载文件'),
-  savingState(6, '保存同步状态'),
-  completed(7, '同步完成');
+  deletingFiles(4, '删除已标记的文件'), // 新增删除文件步骤
+  uploadingFiles(5, '上传文件'),
+  downloadingFiles(6, '下载文件'),
+  savingState(7, '保存同步状态'),
+  completed(8, '同步完成');
 
   final int stepIndex;
   final String description;
@@ -404,38 +405,59 @@ class MediaSyncService {
     }
   }
 
-  /// 更新本地的云端映射表
+  /// 更新本地的云端映射表，包括检测本地已删除的文件
   Future<void> _updateCloudMapping() async {
     if (_deviceInfo == null || _cloudMapping == null) return;
 
-    // 收集所有媒体文件
-    final allMediaFiles = <MediaFileInfo>[];
-    for (final stepIndex in _mediaIndices.values) {
-      allMediaFiles.addAll(stepIndex.mediaFiles.map((media) => media.info));
+    // 收集所有本地媒体文件ID，用于检测删除的文件
+    final allLocalMediaIds = <String>{};
+    for (final mediaIndex in _mediaIndices.values) {
+      for (final media in mediaIndex.mediaFiles) {
+        allLocalMediaIds.add(media.info.id);
+      }
     }
 
-    // 更新映射
-    for (final media in allMediaFiles) {
-      // 已在映射表中的跳过
-      if (_cloudMapping!.findMappingById(media.id) != null) continue;
+    // 检测并标记已删除的文件
+    for (final mapping in _cloudMapping!.mappings.toList()) {
+      // 检查文件是否是本设备创建的（通过检查localPath是否在_appMediaDir内）
+      final isLocallyCreated =
+          !mapping.localPath.startsWith(_appMediaDir!.path);
 
-      // 创建云端路径
-      final datePath = MediaIndex.getDatePath(media.createdAt);
-      final cloudPath = '/EchoPixel/$datePath/${media.fileName}';
+      // 只处理本地创建的文件，且已同步到云端的文件
+      if (isLocallyCreated &&
+          mapping.syncStatus == SyncStatus.synced &&
+          !allLocalMediaIds.contains(mapping.mediaId)) {
+        // 本地文件已删除，但云端还存在，标记为待删除
+        debugPrint('检测到本地已删除文件: ${mapping.mediaId}, 标记为待删除');
+        _cloudMapping!.addOrUpdateMapping(
+            mapping.copyWithSyncStatus(SyncStatus.pendingDelete));
+      }
+    }
 
-      // 创建新的映射
-      final mapping = MediaMapping(
-        mediaId: media.id,
-        localPath: media.originalPath,
-        cloudPath: cloudPath,
-        mediaType: media.type.toString().split('.').last,
-        createdAt: media.createdAt,
-        fileSize: media.size,
-        lastSynced: DateTime.now(),
-        syncStatus: SyncStatus.pendingUpload, // 标记为待上传
-      );
+    // 添加新文件的映射（原有逻辑）
+    for (final mediaIndex in _mediaIndices.values) {
+      for (final media in mediaIndex.mediaFiles) {
+        // 已在映射表中的跳过
+        if (_cloudMapping!.findMappingById(media.info.id) != null) continue;
 
-      _cloudMapping!.addOrUpdateMapping(mapping);
+        // 创建云端路径
+        final datePath = MediaIndex.getDatePath(media.info.createdAt);
+        final cloudPath = '/EchoPixel/$datePath/${media.info.fileName}';
+
+        // 创建新的映射
+        final mapping = MediaMapping(
+          mediaId: media.info.id,
+          localPath: media.info.originalPath,
+          cloudPath: cloudPath,
+          mediaType: media.info.type.toString().split('.').last,
+          createdAt: media.info.createdAt,
+          fileSize: media.info.size,
+          lastSynced: DateTime.now(),
+          syncStatus: SyncStatus.pendingUpload, // 标记为待上传
+        );
+
+        _cloudMapping!.addOrUpdateMapping(mapping);
+      }
     }
 
     // 更新时间戳
@@ -519,11 +541,11 @@ class MediaSyncService {
           return false;
         }
 
-        // 4. 上传待上传的文件
-        _currentSyncStep = SyncStep.uploadingFiles;
-        _updateSyncStatus('正在上传文件...');
-        await _uploadPendingFiles();
-        _syncProgress = 60;
+        // 4. 删除已在本地删除的文件
+        _currentSyncStep = SyncStep.deletingFiles;
+        _updateSyncStatus('正在删除已标记的文件...');
+        await _deleteMarkedFiles();
+        _syncProgress = 40;
 
         // 检查是否请求取消
         if (_cancelSync) {
@@ -532,7 +554,20 @@ class MediaSyncService {
           return false;
         }
 
-        // 5. 下载需要的文件
+        // 5. 上传待上传的文件
+        _currentSyncStep = SyncStep.uploadingFiles;
+        _updateSyncStatus('正在上传文件...');
+        await _uploadPendingFiles();
+        _syncProgress = 70;
+
+        // 检查是否请求取消
+        if (_cancelSync) {
+          _syncError = '同步已被用户取消';
+          _updateSyncStatus('同步已被用户取消');
+          return false;
+        }
+
+        // 6. 下载需要的文件
         _currentSyncStep = SyncStep.downloadingFiles;
         _updateSyncStatus('正在下载文件...');
         await _downloadNeededFiles();
@@ -545,7 +580,7 @@ class MediaSyncService {
           return false;
         }
 
-        // 6. 再次上传更新后的映射表
+        // 7. 再次上传更新后的映射表
         _currentSyncStep = SyncStep.savingState;
         _updateSyncStatus('正在保存同步状态...');
         await _uploadMappingToCloud();
@@ -555,7 +590,7 @@ class MediaSyncService {
         _currentSyncStep = SyncStep.completed;
         _updateSyncStatus('同步完成');
 
-        // 7. 更新设备同步时间
+        // 8. 更新设备同步时间
         if (_deviceInfo != null) {
           await _deviceInfo!.updateLastSyncTime(DateTime.now());
         }
@@ -1022,6 +1057,84 @@ class MediaSyncService {
       // 更新所有映射
       for (final mapping in updatedMappings) {
         _cloudMapping!.addOrUpdateMapping(mapping);
+      }
+
+      // 保存更新后的映射表
+      await _saveCloudMapping();
+    }
+  }
+
+  /// 删除标记为待删除的文件
+  Future<void> _deleteMarkedFiles() async {
+    if (_cloudMapping == null) return;
+
+    // 获取所有待删除的映射
+    final pendingDeletes = _cloudMapping!.mappings
+        .where((mapping) => mapping.syncStatus == SyncStatus.pendingDelete)
+        .toList();
+
+    if (pendingDeletes.isEmpty) {
+      debugPrint('没有需要删除的文件');
+      return;
+    }
+
+    debugPrint('需要删除 ${pendingDeletes.length} 个云端文件');
+
+    // 用于保存已更新的映射和需要移除的映射ID
+    final updatedMappings = <MediaMapping>[];
+    final removedMappings = <String>[];
+
+    // 处理单个删除任务
+    Future<void> processDelete(MediaMapping mapping) async {
+      try {
+        final fileName = path.basename(mapping.cloudPath);
+        debugPrint('删除云端文件: $fileName (${mapping.cloudPath})');
+
+        if (onSyncStatusUpdate != null) {
+          onSyncStatusUpdate!("删除: $fileName");
+        }
+
+        // 检查云端文件是否存在
+        try {
+          final fileExists = await _webdavService.fileExists(mapping.cloudPath);
+          if (!fileExists) {
+            debugPrint('文件在云端不存在，无需删除: ${mapping.cloudPath}');
+            // 直接从映射中移除
+            removedMappings.add(mapping.mediaId);
+            return;
+          }
+        } catch (e) {
+          debugPrint('检查云端文件是否存在时出错: $e');
+          // 仍然尝试删除
+        }
+
+        // 删除文件
+        await _webdavService.deleteFile(mapping.cloudPath);
+        debugPrint('成功删除云端文件: ${mapping.cloudPath}');
+
+        // 从映射中移除这个文件
+        removedMappings.add(mapping.mediaId);
+      } catch (e) {
+        // 删除错误，标记为错误状态但保留映射
+        debugPrint('删除文件错误：${mapping.cloudPath}，${e.toString()}');
+        updatedMappings.add(mapping.copyWithSyncStatus(SyncStatus.error));
+      }
+    }
+
+    try {
+      final limit = PLimit<void>(_maxConcurrentTasks);
+      final tasks =
+          pendingDeletes.map((mapping) => limit(() => processDelete(mapping)));
+      await Future.wait(tasks);
+    } finally {
+      // 更新所有映射
+      for (final mapping in updatedMappings) {
+        _cloudMapping!.addOrUpdateMapping(mapping);
+      }
+
+      // 从映射中移除已成功删除的文件
+      for (final mediaId in removedMappings) {
+        _cloudMapping!.removeMapping(mediaId);
       }
 
       // 保存更新后的映射表
