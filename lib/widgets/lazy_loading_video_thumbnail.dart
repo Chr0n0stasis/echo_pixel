@@ -62,20 +62,16 @@ class _LazyLoadingVideoThumbnailState extends State<LazyLoadingVideoThumbnail> {
         previewQualityService: widget.previewQualityService,
       );
 
-      if (!mounted) return;
-
       setState(() {
         _thumbnailPath = thumbnailPath;
         _isLoading = false;
       });
     } catch (e) {
       debugPrint('生成视频缩略图错误: ${widget.videoPath} - $e');
-      if (mounted) {
-        setState(() {
-          _hasError = true;
-          _isLoading = false;
-        });
-      }
+      setState(() {
+        _hasError = true;
+        _isLoading = false;
+      });
     }
   }
 

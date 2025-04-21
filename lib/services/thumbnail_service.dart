@@ -7,6 +7,7 @@ import 'package:crypto/crypto.dart' as crypto;
 import 'dart:convert';
 import 'package:echo_pixel/services/preview_quality_service.dart';
 import 'package:image/image.dart' as img;
+import 'package:pool/pool.dart';
 
 /// 缩略图类型枚举
 enum ThumbnailType { image, video }
@@ -39,6 +40,9 @@ class ThumbnailService {
 
   /// 图片缩略图内存缓存
   final Map<String, Uint8List> _imageCache = {};
+
+  /// 限制缩略图生成的并发数量
+  final Pool _generationPool = Pool(8);
 
   /// 初始化服务
   Future<void> _initialize() async {
@@ -105,33 +109,35 @@ class ThumbnailService {
       return thumbnailPath;
     }
 
-    // 将耗时处理移至后台线程
-    try {
-      // 获取RootIsolateToken，用于在隔离线程中访问平台通道
-      final rootToken = RootIsolateToken.instance;
-      if (rootToken == null) {
-        debugPrint('无法获取RootIsolateToken，降级到主线程处理');
+    return _generationPool.withResource(() {
+      // 将耗时处理移至后台线程
+      try {
+        // 获取RootIsolateToken，用于在隔离线程中访问平台通道
+        final rootToken = RootIsolateToken.instance;
+        if (rootToken == null) {
+          debugPrint('无法获取RootIsolateToken，降级到主线程处理');
+          return _processVideoThumbnailOnMainThread(
+              videoPath, thumbnailPath, isHighQuality, previewQualityService);
+        }
+
+        return compute(_processVideoThumbnail, {
+          'token': rootToken,
+          'videoPath': videoPath,
+          'thumbnailPath': thumbnailPath,
+          'isHighQuality': isHighQuality,
+          'thumbnailWidth': isHighQuality ? 1080 : 480,
+          'thumbnailHeight': isHighQuality ? 1080 : 480,
+          'thumbnailQuality': previewQualityService?.videoThumbnailQuality ??
+              (isHighQuality ? 80 : 40),
+        });
+      } catch (e) {
+        debugPrint('视频缩略图处理错误: $e');
+
+        // 降级到主线程处理
         return _processVideoThumbnailOnMainThread(
             videoPath, thumbnailPath, isHighQuality, previewQualityService);
       }
-
-      return compute(_processVideoThumbnail, {
-        'token': rootToken,
-        'videoPath': videoPath,
-        'thumbnailPath': thumbnailPath,
-        'isHighQuality': isHighQuality,
-        'thumbnailWidth': isHighQuality ? 1080 : 480,
-        'thumbnailHeight': isHighQuality ? 1080 : 480,
-        'thumbnailQuality': previewQualityService?.videoThumbnailQuality ??
-            (isHighQuality ? 80 : 40),
-      });
-    } catch (e) {
-      debugPrint('视频缩略图处理错误: $e');
-
-      // 降级到主线程处理
-      return _processVideoThumbnailOnMainThread(
-          videoPath, thumbnailPath, isHighQuality, previewQualityService);
-    }
+    });
   }
 
   /// 在主线程中处理视频缩略图（作为降级方案）
@@ -290,25 +296,27 @@ class ThumbnailService {
       return _imageCache[cacheKey];
     }
 
-    // 将剩余的所有缩略图处理工作移至后台隔离线程
-    return compute(_processImageThumbnail, {
-      'imagePath': imagePath,
-      'cacheDir': _cacheDir!.path,
-      'cacheKey': cacheKey,
-      'isHighQuality': isHighQuality,
-      'thumbnailWidth': isHighQuality
-          ? previewQualityService?.imageCacheWidth ?? 800
-          : previewQualityService?.imageCacheWidth ?? 400,
-      'thumbnailHeight': isHighQuality
-          ? previewQualityService?.imageCacheHeight ?? 800
-          : previewQualityService?.imageCacheHeight ?? 400,
-      'thumbnailQuality': isHighQuality ? 80 : 40,
-    }).then((result) {
-      // 如果成功生成缩略图，将其添加到内存缓存中
-      if (result != null) {
-        _imageCache[cacheKey] = result;
-      }
-      return result;
+    return _generationPool.withResource(() {
+      // 将剩余的所有缩略图处理工作移至后台隔离线程
+      return compute(_processImageThumbnail, {
+        'imagePath': imagePath,
+        'cacheDir': _cacheDir!.path,
+        'cacheKey': cacheKey,
+        'isHighQuality': isHighQuality,
+        'thumbnailWidth': isHighQuality
+            ? previewQualityService?.imageCacheWidth ?? 800
+            : previewQualityService?.imageCacheWidth ?? 400,
+        'thumbnailHeight': isHighQuality
+            ? previewQualityService?.imageCacheHeight ?? 800
+            : previewQualityService?.imageCacheHeight ?? 400,
+        'thumbnailQuality': isHighQuality ? 80 : 40,
+      }).then((result) {
+        // 如果成功生成缩略图，将其添加到内存缓存中
+        if (result != null) {
+          _imageCache[cacheKey] = result;
+        }
+        return result;
+      });
     });
   }
 
