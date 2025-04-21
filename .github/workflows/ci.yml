@@ -48,7 +48,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-app
-          path: build/windows/runner/Release/**/*   # .exe及相关文件
+          path: build\windows\x64\runner\Release   # .exe及相关文件
 
   macos:
     name: Build macOS App
