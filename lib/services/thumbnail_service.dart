@@ -5,7 +5,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:fc_native_video_thumbnail/fc_native_video_thumbnail.dart';
 import 'package:crypto/crypto.dart' as crypto;
 import 'dart:convert';
-import 'package:EchoPixel/services/preview_quality_service.dart';
+import 'package:echo_pixel/services/preview_quality_service.dart';
 import 'package:image/image.dart' as img;
 
 /// 缩略图类型枚举

@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:EchoPixel/services/media_sync_service.dart';
+import 'package:echo_pixel/services/media_sync_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 import 'package:crypto/crypto.dart';
@@ -268,38 +268,6 @@ class DesktopMediaScanner {
       final input = file.openRead();
       final streamDigest = await sha256.bind(input).first;
       return streamDigest.toString();
-    }
-  }
-
-  /// 获取媒体文件的缩略图（支持图片和视频）
-  /// 目前仅支持图片，视频需要额外依赖项处理
-  Future<Uint8List?> getThumbnail(String filePath) async {
-    try {
-      final file = File(filePath);
-      if (!await file.exists()) {
-        return null;
-      }
-
-      final extension =
-          path.extension(filePath).toLowerCase().replaceAll('.', '');
-
-      // 如果是图片，使用更节省内存的方式加载缩略图
-      if (MediaFileInfo.isImageExtension(extension)) {
-        // 这里应该实现真正的缩略图创建，而不是加载整个图片
-        // 实际项目中应该使用 flutter_native_image 或类似库处理缩略图
-        // 这里简化处理，返回完整图片但限制大小
-        final fileSize = await file.length();
-        if (fileSize > _maxFileSize) {
-          return null; // 对于大图片，暂时不加载
-        }
-        return await file.readAsBytes();
-      }
-
-      // 对于视频，需要使用FFmpeg等工具生成缩略图
-      return null;
-    } catch (e) {
-      debugPrint('获取缩略图错误: $e');
-      return null;
     }
   }
 

@@ -1,8 +1,8 @@
-import 'package:EchoPixel/screens/media_scan_settings_page.dart';
+import 'package:echo_pixel/screens/media_scan_settings_page.dart';
 import 'package:device_info_plus/device_info_plus.dart';
-import 'package:EchoPixel/screens/device_management_page.dart';
-import 'package:EchoPixel/screens/webdav_status_page.dart';
-import 'package:EchoPixel/services/thumbnail_service.dart';
+import 'package:echo_pixel/screens/device_management_page.dart';
+import 'package:echo_pixel/screens/webdav_status_page.dart';
+import 'package:echo_pixel/services/thumbnail_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:io' show Platform;

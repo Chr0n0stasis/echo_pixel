@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:EchoPixel/services/media_sync_service.dart';
+import 'package:echo_pixel/services/media_sync_service.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:p_limit/p_limit.dart';

@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'dart:io';
-import 'package:EchoPixel/screens/image_viewer_page.dart';
-import 'package:EchoPixel/screens/video_player_page.dart';
-import 'package:EchoPixel/screens/webdav_settings.dart';
-import 'package:EchoPixel/services/media_cache_service.dart';
-import 'package:EchoPixel/widgets/lazy_loading_image_thumbnail.dart';
-import 'package:EchoPixel/widgets/lazy_loading_video_thumbnail.dart';
+import 'package:echo_pixel/screens/image_viewer_page.dart';
+import 'package:echo_pixel/screens/video_player_page.dart';
+import 'package:echo_pixel/screens/webdav_settings.dart';
+import 'package:echo_pixel/services/media_cache_service.dart';
+import 'package:echo_pixel/widgets/lazy_loading_image_thumbnail.dart';
+import 'package:echo_pixel/widgets/lazy_loading_video_thumbnail.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:collection/collection.dart';
