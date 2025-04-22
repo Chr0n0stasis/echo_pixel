@@ -1,17 +1,14 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../services/thumbnail_service.dart';
-import '../services/preview_quality_service.dart';
 
 /// 懒加载图片缩略图组件 - 使用ThumbnailService生成缩略图
 class LazyLoadingImageThumbnail extends StatefulWidget {
   final String imagePath;
-  final PreviewQualityService previewQualityService;
   final BoxFit fit;
 
   const LazyLoadingImageThumbnail({
     required this.imagePath,
-    required this.previewQualityService,
     this.fit = BoxFit.cover,
     super.key,
   });
@@ -46,10 +43,8 @@ class _LazyLoadingImageThumbnailState extends State<LazyLoadingImageThumbnail> {
   void didUpdateWidget(LazyLoadingImageThumbnail oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // 如果图片路径或质量设置发生变化，重新加载缩略图
-    if (oldWidget.imagePath != widget.imagePath ||
-        oldWidget.previewQualityService.isHighQuality !=
-            widget.previewQualityService.isHighQuality) {
+    // 如果图片路径发生变化，重新加载缩略图
+    if (oldWidget.imagePath != widget.imagePath) {
       _checkIfGif();
       _loadThumbnail();
     }
@@ -65,7 +60,6 @@ class _LazyLoadingImageThumbnailState extends State<LazyLoadingImageThumbnail> {
       // 使用缩略图服务获取图片缩略图数据
       final thumbnailData = await _thumbnailService.getImageThumbnail(
         widget.imagePath,
-        previewQualityService: widget.previewQualityService,
       );
 
       if (!mounted) return;
@@ -120,7 +114,7 @@ class _LazyLoadingImageThumbnailState extends State<LazyLoadingImageThumbnail> {
           Image.memory(
             _thumbnailData!,
             fit: widget.fit,
-            filterQuality: widget.previewQualityService.imageFilterQuality,
+            filterQuality: FilterQuality.high,
           ),
           // 叠加GIF标志
           Positioned(
@@ -129,7 +123,7 @@ class _LazyLoadingImageThumbnailState extends State<LazyLoadingImageThumbnail> {
             child: Container(
               padding: const EdgeInsets.all(4),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.6),
+                color: Colors.black.withValues(alpha: 0.6),
                 borderRadius: BorderRadius.circular(4),
               ),
               child: const Text(
@@ -146,7 +140,7 @@ class _LazyLoadingImageThumbnailState extends State<LazyLoadingImageThumbnail> {
     return Image.memory(
       _thumbnailData!,
       fit: widget.fit,
-      filterQuality: widget.previewQualityService.imageFilterQuality,
+      filterQuality: FilterQuality.high,
       errorBuilder: (context, error, stackTrace) {
         return Container(
           color: Colors.black,

@@ -15,7 +15,6 @@ import 'package:provider/provider.dart';
 import '../models/media_index.dart';
 import '../services/media_sync_service.dart';
 import '../services/webdav_service.dart';
-import '../services/preview_quality_service.dart';
 import '../services/media_index_service.dart';
 
 class PhotoGalleryPage extends StatefulWidget {
@@ -674,9 +673,6 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
 
   // 构建媒体预览
   Widget _buildMediaPreview(MediaFileInfo mediaFile) {
-    // 获取预览质量设置服务
-    final previewQualityService = Provider.of<PreviewQualityService>(context);
-
     // 对于Web平台，暂不支持本地文件访问
     if (kIsWeb) {
       return Container(
@@ -701,7 +697,6 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
           color: Colors.black, // 给图片设置背景色，避免透明区域
           child: LazyLoadingImageThumbnail(
             imagePath: mediaFile.originalPath,
-            previewQualityService: previewQualityService,
             fit: BoxFit.cover,
           ),
         );
@@ -709,10 +704,7 @@ class PhotoGalleryPageState extends State<PhotoGalleryPage> {
         // 使用懒加载视频缩略图组件
         return Container(
           color: Colors.black, // 给视频缩略图设置背景色
-          child: LazyLoadingVideoThumbnail(
-            videoPath: mediaFile.originalPath,
-            previewQualityService: previewQualityService,
-          ),
+          child: LazyLoadingVideoThumbnail(videoPath: mediaFile.originalPath),
         );
       } else {
         return Container(

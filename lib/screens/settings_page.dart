@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/theme_service.dart';
-import '../services/preview_quality_service.dart'; // 导入预览质量服务
 import 'webdav_settings.dart';
 import 'storage_management_page.dart';
 import 'media_scan_settings_page.dart';
@@ -112,7 +111,6 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget build(BuildContext context) {
     // 使用Provider获取服务实例
     final themeService = Provider.of<ThemeService>(context);
-    final previewQualityService = Provider.of<PreviewQualityService>(context);
 
     return Scaffold(
       body: ListView(
@@ -138,17 +136,6 @@ class _SettingsPageState extends State<SettingsPage> {
               subtitle: const Text('启用深色主题'),
               value: themeService.isDarkMode,
               onChanged: (value) => themeService.setDarkMode(value),
-            ),
-          ),
-
-          // 预览质量设置
-          Card(
-            margin: const EdgeInsets.symmetric(vertical: 8.0),
-            child: SwitchListTile(
-              title: const Text('高质量预览'),
-              subtitle: const Text('使用更高质量的图片和视频预览'),
-              value: previewQualityService.isHighQuality,
-              onChanged: (value) => previewQualityService.setHighQuality(value),
             ),
           ),
 

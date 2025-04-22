@@ -5,7 +5,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:fc_native_video_thumbnail/fc_native_video_thumbnail.dart';
 import 'package:crypto/crypto.dart' as crypto;
 import 'dart:convert';
-import 'package:echo_pixel/services/preview_quality_service.dart';
 import 'package:image/image.dart' as img;
 import 'package:pool/pool.dart';
 
@@ -75,13 +74,11 @@ class ThumbnailService {
   }
 
   /// 从文件路径生成缓存key，包含文件类型和质量标记
-  String _generateCacheKey(
-      String filePath, ThumbnailType type, bool isHighQuality) {
+  String _generateCacheKey(String filePath, ThumbnailType type) {
     final typeStr = type == ThumbnailType.image
         ? 'img'
         : (type == ThumbnailType.video ? 'vid' : 'gif');
-    final qualitySuffix = isHighQuality ? '_hq' : '_lq';
-    final bytes = utf8.encode('$typeStr:$filePath$qualitySuffix');
+    final bytes = utf8.encode('$typeStr:$filePath');
     final digest = crypto.sha1.convert(bytes);
     return digest.toString();
   }
@@ -93,16 +90,12 @@ class ThumbnailService {
 
   /// 获取GIF缩略图（提取第一帧）
   /// [gifPath] GIF文件路径
-  /// [previewQualityService] 预览质量服务（可选，默认使用高质量）
   /// 返回缩略图数据，如果生成失败则返回null
-  Future<Uint8List?> getGifThumbnail(String gifPath,
-      {PreviewQualityService? previewQualityService}) async {
+  Future<Uint8List?> getGifThumbnail(String gifPath) async {
     await ensureInitialized();
     if (_cacheDir == null) return null;
 
-    final bool isHighQuality = previewQualityService?.isHighQuality ?? true;
-    final cacheKey =
-        _generateCacheKey(gifPath, ThumbnailType.gif, isHighQuality);
+    final cacheKey = _generateCacheKey(gifPath, ThumbnailType.gif);
 
     // 首先检查内存缓存
     if (_imageCache.containsKey(cacheKey)) {
@@ -115,14 +108,9 @@ class ThumbnailService {
         'gifPath': gifPath,
         'cacheDir': _cacheDir!.path,
         'cacheKey': cacheKey,
-        'isHighQuality': isHighQuality,
-        'thumbnailWidth': isHighQuality
-            ? previewQualityService?.imageCacheWidth ?? 800
-            : previewQualityService?.imageCacheWidth ?? 400,
-        'thumbnailHeight': isHighQuality
-            ? previewQualityService?.imageCacheHeight ?? 800
-            : previewQualityService?.imageCacheHeight ?? 400,
-        'thumbnailQuality': isHighQuality ? 80 : 40,
+        'thumbnailWidth': 800,
+        'thumbnailHeight': 800,
+        'thumbnailQuality': 80,
       }).then((result) {
         // 如果成功生成缩略图，将其添加到内存缓存中
         if (result != null) {
@@ -139,7 +127,6 @@ class ThumbnailService {
     final String gifPath = params['gifPath'];
     final String cacheDirPath = params['cacheDir'];
     final String cacheKey = params['cacheKey'];
-    final bool isHighQuality = params['isHighQuality'];
     final int thumbnailWidth = params['thumbnailWidth'];
     final int thumbnailHeight = params['thumbnailHeight'];
     final int thumbnailQuality = params['thumbnailQuality'];
@@ -161,7 +148,7 @@ class ThumbnailService {
       }
 
       // 读取原始GIF文件
-      debugPrint('生成${isHighQuality ? "高" : "低"}质量GIF缩略图: $gifPath');
+      debugPrint('生成GIF缩略图: $gifPath');
       final bytes = await gifFile.readAsBytes();
 
       // 解码GIF文件，提取第一帧
@@ -237,17 +224,12 @@ class ThumbnailService {
   /// [videoPath] 视频文件路径
   /// [previewQualityService] 预览质量服务（可选，默认使用高质量）
   /// 返回缩略图文件路径，如果生成失败则返回null
-  Future<String?> getVideoThumbnail(String videoPath,
-      {PreviewQualityService? previewQualityService}) async {
+  Future<String?> getVideoThumbnail(String videoPath) async {
     await ensureInitialized();
     if (_cacheDir == null) return null;
 
-    // 确定缩略图质量 - UI线程中的轻量级操作
-    final bool isHighQuality = previewQualityService?.isHighQuality ?? true;
-
     // 生成缓存键 - UI线程中的轻量级操作
-    final cacheKey =
-        _generateCacheKey(videoPath, ThumbnailType.video, isHighQuality);
+    final cacheKey = _generateCacheKey(videoPath, ThumbnailType.video);
     final thumbnailPath =
         '${_cacheDir!.path}${Platform.pathSeparator}$cacheKey.jpg';
 
@@ -264,36 +246,29 @@ class ThumbnailService {
         final rootToken = RootIsolateToken.instance;
         if (rootToken == null) {
           debugPrint('无法获取RootIsolateToken，降级到主线程处理');
-          return _processVideoThumbnailOnMainThread(
-              videoPath, thumbnailPath, isHighQuality, previewQualityService);
+          return _processVideoThumbnailOnMainThread(videoPath, thumbnailPath);
         }
 
         return compute(_processVideoThumbnail, {
           'token': rootToken,
           'videoPath': videoPath,
           'thumbnailPath': thumbnailPath,
-          'isHighQuality': isHighQuality,
-          'thumbnailWidth': isHighQuality ? 1080 : 480,
-          'thumbnailHeight': isHighQuality ? 1080 : 480,
-          'thumbnailQuality': previewQualityService?.videoThumbnailQuality ??
-              (isHighQuality ? 80 : 40),
+          'thumbnailWidth': 1080,
+          'thumbnailHeight': 1080,
+          'thumbnailQuality': 80
         });
       } catch (e) {
         debugPrint('视频缩略图处理错误: $e');
 
         // 降级到主线程处理
-        return _processVideoThumbnailOnMainThread(
-            videoPath, thumbnailPath, isHighQuality, previewQualityService);
+        return _processVideoThumbnailOnMainThread(videoPath, thumbnailPath);
       }
     });
   }
 
   /// 在主线程中处理视频缩略图（作为降级方案）
   Future<String?> _processVideoThumbnailOnMainThread(
-      String videoPath,
-      String thumbnailPath,
-      bool isHighQuality,
-      PreviewQualityService? previewQualityService) async {
+      String videoPath, String thumbnailPath) async {
     try {
       // 检查源视频文件是否存在
       final videoFile = File(videoPath);
@@ -307,12 +282,10 @@ class ThumbnailService {
       final success = await _videoThumbnailGenerator.getVideoThumbnail(
         srcFile: videoPath,
         destFile: thumbnailPath,
-        width: isHighQuality ? 480 : 240, // 降低质量，以减轻主线程负担
-        height: isHighQuality ? 480 : 240,
+        width: 480, // 降低质量，以减轻主线程负担
+        height: 480,
         format: 'jpeg',
-        quality: (previewQualityService?.videoThumbnailQuality ??
-                (isHighQuality ? 80 : 40)) -
-            20,
+        quality: 60,
       );
 
       if (success) {
@@ -332,7 +305,6 @@ class ThumbnailService {
     final token = params['token'] as RootIsolateToken;
     final String videoPath = params['videoPath'];
     final String thumbnailPath = params['thumbnailPath'];
-    final bool isHighQuality = params['isHighQuality'];
     final int thumbnailWidth = params['thumbnailWidth'];
     final int thumbnailHeight = params['thumbnailHeight'];
     final int thumbnailQuality = params['thumbnailQuality'];
@@ -352,8 +324,7 @@ class ThumbnailService {
       final videoThumbnailGenerator = FcNativeVideoThumbnail();
 
       // 生成缩略图 - 增加更多错误处理
-      debugPrint(
-          '生成${isHighQuality ? "高" : "低"}质量视频缩略图: $videoPath -> $thumbnailPath');
+      debugPrint('生成视频缩略图: $videoPath -> $thumbnailPath');
 
       try {
         final success = await videoThumbnailGenerator.getVideoThumbnail(
@@ -427,20 +398,16 @@ class ThumbnailService {
   /// [imagePath] 图片文件路径
   /// [previewQualityService] 预览质量服务（可选，默认使用高质量）
   /// 返回缩略图数据，如果生成失败则返回null
-  Future<Uint8List?> getImageThumbnail(String imagePath,
-      {PreviewQualityService? previewQualityService}) async {
+  Future<Uint8List?> getImageThumbnail(String imagePath) async {
     await ensureInitialized();
     if (_cacheDir == null) return null;
 
     // 检查是否为GIF文件，如果是，则使用专门的GIF处理方法
     if (isGifFile(imagePath)) {
-      return getGifThumbnail(imagePath,
-          previewQualityService: previewQualityService);
+      return getGifThumbnail(imagePath);
     }
 
-    final bool isHighQuality = previewQualityService?.isHighQuality ?? true;
-    final cacheKey =
-        _generateCacheKey(imagePath, ThumbnailType.image, isHighQuality);
+    final cacheKey = _generateCacheKey(imagePath, ThumbnailType.image);
     if (_imageCache.containsKey(cacheKey)) {
       return _imageCache[cacheKey];
     }
@@ -451,14 +418,9 @@ class ThumbnailService {
         'imagePath': imagePath,
         'cacheDir': _cacheDir!.path,
         'cacheKey': cacheKey,
-        'isHighQuality': isHighQuality,
-        'thumbnailWidth': isHighQuality
-            ? previewQualityService?.imageCacheWidth ?? 800
-            : previewQualityService?.imageCacheWidth ?? 400,
-        'thumbnailHeight': isHighQuality
-            ? previewQualityService?.imageCacheHeight ?? 800
-            : previewQualityService?.imageCacheHeight ?? 400,
-        'thumbnailQuality': isHighQuality ? 80 : 40,
+        'thumbnailWidth': 800,
+        'thumbnailHeight': 800,
+        'thumbnailQuality': 80,
       }).then((result) {
         // 如果成功生成缩略图，将其添加到内存缓存中
         if (result != null) {
@@ -475,7 +437,6 @@ class ThumbnailService {
     final String imagePath = params['imagePath'];
     final String cacheDirPath = params['cacheDir'];
     final String cacheKey = params['cacheKey'];
-    final bool isHighQuality = params['isHighQuality'];
     final int thumbnailWidth = params['thumbnailWidth'];
     final int thumbnailHeight = params['thumbnailHeight'];
     final int thumbnailQuality = params['thumbnailQuality'];
@@ -649,10 +610,8 @@ class ThumbnailService {
   }
 
   /// 预加载图片缩略图（可以用于提前缓存重要的图片）
-  Future<bool> preloadImageThumbnail(String imagePath,
-      {PreviewQualityService? previewQualityService}) async {
-    final thumbnail = await getImageThumbnail(imagePath,
-        previewQualityService: previewQualityService);
+  Future<bool> preloadImageThumbnail(String imagePath) async {
+    final thumbnail = await getImageThumbnail(imagePath);
     return thumbnail != null;
   }
 
@@ -665,34 +624,19 @@ class ThumbnailService {
     try {
       bool result = false;
 
-      // 删除高质量缩略图
-      final highQualityCacheKey = _generateCacheKey(filePath, type, true);
-      final highQualityThumbnailPath =
-          '${_cacheDir!.path}${Platform.pathSeparator}$highQualityCacheKey.jpg';
-      final highQualityCacheFile = File(highQualityThumbnailPath);
-      if (await highQualityCacheFile.exists()) {
-        await highQualityCacheFile.delete();
+      // 删除缩略图
+      final cacheKey = _generateCacheKey(filePath, type);
+      final thumbnailPath =
+          '${_cacheDir!.path}/${Platform.pathSeparator}$cacheKey.jpg';
+      final cacheFile = File(thumbnailPath);
+      if (await cacheFile.exists()) {
+        await cacheFile.delete();
         result = true;
       }
 
       // 从内存缓存中移除
       if (type == ThumbnailType.image) {
-        _imageCache.remove(highQualityCacheKey);
-      }
-
-      // 删除低质量缩略图
-      final lowQualityCacheKey = _generateCacheKey(filePath, type, false);
-      final lowQualityThumbnailPath =
-          '${_cacheDir!.path}/${Platform.pathSeparator}$lowQualityCacheKey.jpg';
-      final lowQualityCacheFile = File(lowQualityThumbnailPath);
-      if (await lowQualityCacheFile.exists()) {
-        await lowQualityCacheFile.delete();
-        result = true;
-      }
-
-      // 从内存缓存中移除
-      if (type == ThumbnailType.image) {
-        _imageCache.remove(lowQualityCacheKey);
+        _imageCache.remove(cacheKey);
       }
 
       return result;

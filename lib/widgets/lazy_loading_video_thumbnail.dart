@@ -1,17 +1,14 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import '../services/thumbnail_service.dart';
-import '../services/preview_quality_service.dart';
 
 /// 懒加载视频缩略图组件 - 使用ThumbnailService生成缩略图
 class LazyLoadingVideoThumbnail extends StatefulWidget {
   final String videoPath;
-  final PreviewQualityService previewQualityService;
   final BoxFit fit;
 
   const LazyLoadingVideoThumbnail({
     required this.videoPath,
-    required this.previewQualityService,
     this.fit = BoxFit.cover,
     super.key,
   });
@@ -39,10 +36,8 @@ class _LazyLoadingVideoThumbnailState extends State<LazyLoadingVideoThumbnail> {
   void didUpdateWidget(LazyLoadingVideoThumbnail oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // 如果视频路径或质量设置发生变化，重新加载缩略图
-    if (oldWidget.videoPath != widget.videoPath ||
-        oldWidget.previewQualityService.isHighQuality !=
-            widget.previewQualityService.isHighQuality) {
+    // 如果视频路径发生变化，重新加载缩略图
+    if (oldWidget.videoPath != widget.videoPath) {
       _loadThumbnail();
     }
   }
@@ -57,7 +52,6 @@ class _LazyLoadingVideoThumbnailState extends State<LazyLoadingVideoThumbnail> {
       // 使用缩略图服务获取视频缩略图路径
       final thumbnailPath = await _thumbnailService.getVideoThumbnail(
         widget.videoPath,
-        previewQualityService: widget.previewQualityService,
       );
 
       if (!mounted) return;
@@ -107,7 +101,7 @@ class _LazyLoadingVideoThumbnailState extends State<LazyLoadingVideoThumbnail> {
     return Image.file(
       File(_thumbnailPath!),
       fit: widget.fit,
-      filterQuality: widget.previewQualityService.imageFilterQuality,
+      filterQuality: FilterQuality.high,
       errorBuilder: (context, error, stackTrace) {
         return Container(
           color: Colors.black,

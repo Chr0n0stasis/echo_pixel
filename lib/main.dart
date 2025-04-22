@@ -11,7 +11,6 @@ import 'package:permission_handler/permission_handler.dart'; // 导入权限处�
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/theme_service.dart';
-import 'services/preview_quality_service.dart'; // 导入预览质量服务
 import 'services/webdav_service.dart'; // 导入WebDAV服务
 import 'services/media_sync_service.dart'; // 导入媒体同步服务
 import 'services/media_index_service.dart'; // 导入媒体索引服务
@@ -31,12 +30,10 @@ void main() async {
 
   // 初始化其他服务
   final themeService = ThemeService();
-  final previewQualityService = PreviewQualityService();
   final mediaIndexService = MediaIndexService(); // 初始化媒体索引服务
 
   await Future.wait([
     themeService.initialize(),
-    previewQualityService.initialize(),
     mediaSyncService.initialize(), // 初始化媒体同步服务
   ]);
 
@@ -53,8 +50,6 @@ void main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider<ThemeService>.value(value: themeService),
-        ChangeNotifierProvider<PreviewQualityService>.value(
-            value: previewQualityService),
         // 添加MediaSyncService作为Provider
         Provider<MediaSyncService>.value(value: mediaSyncService),
         // 添加WebDavService作为Provider
