@@ -56,8 +56,6 @@ class _LazyLoadingImageThumbnailState extends State<LazyLoadingImageThumbnail> {
   }
 
   Future<void> _loadThumbnail() async {
-    if (!mounted) return;
-
     setState(() {
       _isLoading = true;
       _hasError = false;
