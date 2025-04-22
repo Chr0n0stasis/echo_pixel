@@ -1,9 +1,7 @@
-import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../services/thumbnail_service.dart';
 import '../services/preview_quality_service.dart';
-import '../widgets/gif_player.dart';
 
 /// 懒加载图片缩略图组件 - 使用ThumbnailService生成缩略图
 class LazyLoadingImageThumbnail extends StatefulWidget {

@@ -21,15 +21,14 @@ class GifPlayer extends StatefulWidget {
   final FilterQuality filterQuality;
 
   const GifPlayer({
-    Key? key,
+    super.key,
     this.filePath,
     this.gifBytes,
     this.fit = BoxFit.cover,
     this.autoPlay = true,
     this.filterQuality = FilterQuality.low,
-  })  : assert(
-            filePath != null || gifBytes != null, "必须提供filePath或gifBytes其中之一"),
-        super(key: key);
+  }) : assert(
+            filePath != null || gifBytes != null, "必须提供filePath或gifBytes其中之一");
 
   @override
   State<GifPlayer> createState() => _GifPlayerState();
