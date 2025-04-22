@@ -2,7 +2,7 @@
 
 <img src="https://github.com/shadow3aaa/echo_pixel/raw/refs/heads/main/assets/icon/EchoPixel.svg" width="160" height="160" style="display: block; margin: 0 auto;" alt="SVG Image">
 
-# **EchoPixel**
+# **EchoPixel(WIP)**
 
 ### 多平台同步相册，纯客户端实现(支持webdav)
 
