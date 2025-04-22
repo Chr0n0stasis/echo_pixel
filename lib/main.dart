@@ -173,7 +173,7 @@ class _HomeScreenState extends State<HomeScreen> {
     debugPrint('主页面：收到WebDAV设置请求');
     // 切换到设置页面
     setState(() {
-      _selectedIndex = 2; // 设置页面的索引
+      _selectedIndex = 3; // 设置页面的索引
     });
   }
 
