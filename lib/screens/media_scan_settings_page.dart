@@ -58,9 +58,6 @@ class MediaScanSettingsPage extends StatefulWidget {
 class _MediaScanSettingsPageState extends State<MediaScanSettingsPage> {
   final List<String> _scanFolders = [];
   bool _isLoading = true;
-  bool _scanHiddenFolders = false;
-  bool _scanSystemFolders = false;
-  bool _enableAutoScan = true;
 
   @override
   void initState() {
@@ -79,11 +76,6 @@ class _MediaScanSettingsPageState extends State<MediaScanSettingsPage> {
       // 加载扫描目录列表
       final scanFolders = prefs.getStringList('scan_folders');
 
-      // 加载其他扫描设置
-      final scanHidden = prefs.getBool('scan_hidden_folders');
-      final scanSystem = prefs.getBool('scan_system_folders');
-      final autoScan = prefs.getBool('enable_auto_scan');
-
       setState(() {
         if (scanFolders != null) {
           _scanFolders.clear();
@@ -92,9 +84,6 @@ class _MediaScanSettingsPageState extends State<MediaScanSettingsPage> {
           _addDefaultFolders();
         }
 
-        _scanHiddenFolders = scanHidden ?? false;
-        _scanSystemFolders = scanSystem ?? false;
-        _enableAutoScan = autoScan ?? true;
         _isLoading = false;
       });
     } catch (e) {
@@ -173,28 +162,6 @@ class _MediaScanSettingsPageState extends State<MediaScanSettingsPage> {
     }
   }
 
-  Future<void> _saveSettings() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('scan_hidden_folders', _scanHiddenFolders);
-      await prefs.setBool('scan_system_folders', _scanSystemFolders);
-      await prefs.setBool('enable_auto_scan', _enableAutoScan);
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('设置已保存')),
-        );
-      }
-    } catch (e) {
-      debugPrint('保存媒体扫描设置错误: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('保存设置失败: $e')),
-        );
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -268,60 +235,6 @@ class _MediaScanSettingsPageState extends State<MediaScanSettingsPage> {
                       ),
                     ),
                   ),
-
-                // 扫描设置
-                Card(
-                  margin: const EdgeInsets.only(bottom: 16.0),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          '扫描设置',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        SwitchListTile(
-                          title: const Text('自动扫描'),
-                          subtitle: const Text('应用启动时自动扫描新媒体文件'),
-                          value: _enableAutoScan,
-                          onChanged: (value) {
-                            setState(() {
-                              _enableAutoScan = value;
-                            });
-                            _saveSettings();
-                          },
-                        ),
-                        SwitchListTile(
-                          title: const Text('扫描隐藏文件夹'),
-                          subtitle: const Text('包含以"."开头的隐藏文件夹'),
-                          value: _scanHiddenFolders,
-                          onChanged: (value) {
-                            setState(() {
-                              _scanHiddenFolders = value;
-                            });
-                            _saveSettings();
-                          },
-                        ),
-                        SwitchListTile(
-                          title: const Text('扫描系统文件夹'),
-                          subtitle: const Text('包含系统文件夹中的媒体文件'),
-                          value: _scanSystemFolders,
-                          onChanged: (value) {
-                            setState(() {
-                              _scanSystemFolders = value;
-                            });
-                            _saveSettings();
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
 
                 // 移动端设备说明
                 if (!MediaScanSettingsPage.isDesktopPlatform())
