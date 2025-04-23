@@ -40,7 +40,7 @@ dependencies:
   shared_preferences: ^2.2.2
   
   # 权限处理
-  permission_handler: ^11.2.0
+  permission_handler: ^12.0.0+1
   device_info_plus: ^11.3.3
   
   # 新增缺少的依赖
@@ -62,7 +62,7 @@ dependencies:
   
   fc_native_video_thumbnail: ^0.17.2
   photo_view: ^0.15.0
-  share_plus: ^10.1.4
+  share_plus: ^11.0.0
   file_picker: ^10.1.2
   url_launcher: ^6.3.1
   provider: ^6.1.4
@@ -83,6 +83,7 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
   flutter_launcher_icons: ^0.14.3
+  msix: ^3.16.8
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
