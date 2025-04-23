@@ -1,8 +1,10 @@
 import 'package:echo_pixel/screens/media_scan_settings_page.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:echo_pixel/screens/device_management_page.dart';
+import 'package:echo_pixel/screens/permission_guide_page.dart'; // 导入权限引导页面
 import 'package:echo_pixel/screens/webdav_status_page.dart';
 import 'package:echo_pixel/services/thumbnail_service.dart';
+import 'package:echo_pixel/services/foreground_sync_service.dart'; // 导入前台任务服务
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:io' show Platform;
@@ -24,6 +26,11 @@ void main() async {
   // 初始化MediaKit
   MediaKit.ensureInitialized();
 
+  // 在移动平台上初始化前台任务服务
+  if (!isDesktopPlatform()) {
+    await ForegroundSyncService.initForegroundTask();
+  }
+
   // 初始化WebDAV服务和媒体同步服务
   final webDavService = WebDavService();
   final mediaSyncService = MediaSyncService(webDavService);
@@ -36,11 +43,6 @@ void main() async {
     themeService.initialize(),
     mediaSyncService.initialize(), // 初始化媒体同步服务
   ]);
-
-  // 在Android平台上请求权限
-  if (Platform.isAndroid) {
-    await requestPermissions();
-  }
 
   // 初始化SharedPreferences
   await initPrefs();
@@ -75,29 +77,6 @@ Future<void> initPrefs() async {
   }
 }
 
-// 请求所需的权限
-Future<void> requestPermissions() async {
-  // 针对不同Android版本请求不同权限
-  if (Platform.isAndroid) {
-    // 获取 Android SDK 版本
-    final androidInfo = await DeviceInfoPlugin().androidInfo;
-    final sdkInt = androidInfo.version.sdkInt;
-
-    if (sdkInt >= 33) {
-      // Android 13及以上使用新的细粒度权限
-      await Future.wait([
-        Permission.photos.request(),
-        Permission.videos.request(),
-      ]);
-    } else {
-      // 较旧版本使用存储权限
-      await Permission.storage.request();
-    }
-
-    // 网络权限不需要动态申请
-  }
-}
-
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -121,7 +100,7 @@ class MyApp extends StatelessWidget {
       ),
       // 根据ThemeService设置主题模式
       themeMode: themeService.themeMode,
-      home: const HomeScreen(),
+      home: const AppStartupController(),
       debugShowCheckedModeBanner: false,
     );
   }
@@ -380,4 +359,121 @@ class _HomeScreenState extends State<HomeScreen> {
 bool isDesktopPlatform() {
   return !kIsWeb &&
       (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
+}
+
+/// 应用启动控制器，用于管理应用启动流程
+class AppStartupController extends StatefulWidget {
+  const AppStartupController({super.key});
+
+  @override
+  State<AppStartupController> createState() => _AppStartupControllerState();
+}
+
+class _AppStartupControllerState extends State<AppStartupController> {
+  bool _isLoading = true;
+  bool _showPermissionGuide = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkPermissionStatus();
+  }
+
+  Future<void> _checkPermissionStatus() async {
+    // 非Android平台不需要显示权限引导
+    if (!Platform.isAndroid) {
+      setState(() {
+        _isLoading = false;
+        _showPermissionGuide = false;
+      });
+      return;
+    }
+
+    // 检查是否已经授予了权限
+    final prefs = await SharedPreferences.getInstance();
+    final permissionsGranted = prefs.getBool('permissions_granted') ?? false;
+
+    // 如果已经授予权限，直接进入主页面
+    if (permissionsGranted) {
+      setState(() {
+        _isLoading = false;
+        _showPermissionGuide = false;
+      });
+      return;
+    }
+
+    // 检查Android版本和权限状态
+    final androidInfo = await DeviceInfoPlugin().androidInfo;
+    final sdkInt = androidInfo.version.sdkInt;
+    bool needPermission = false;
+
+    // 检查通知权限
+    final notificationStatus = await Permission.notification.status;
+    if (!notificationStatus.isGranted) {
+      needPermission = true;
+    }
+
+    // 根据Android版本检查不同的媒体权限
+    if (sdkInt >= 33) {
+      // Android 13及以上
+      final photosStatus = await Permission.photos.status;
+      final videosStatus = await Permission.videos.status;
+      if (!photosStatus.isGranted || !videosStatus.isGranted) {
+        needPermission = true;
+      }
+    } else {
+      // 低版本Android
+      final storageStatus = await Permission.storage.status;
+      if (!storageStatus.isGranted) {
+        needPermission = true;
+      }
+    }
+
+    setState(() {
+      _isLoading = false;
+      _showPermissionGuide = needPermission;
+    });
+  }
+
+  void _onPermissionsGranted() {
+    setState(() {
+      _showPermissionGuide = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) {
+      // 显示加载画面
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Image.asset(
+                'assets/icon/foreground.png',
+                width: 120,
+                height: 120,
+              ),
+              const SizedBox(height: 30),
+              const CircularProgressIndicator(),
+              const SizedBox(height: 20),
+              const Text('正在加载应用...',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // 如果需要显示权限引导，则显示权限引导页面
+    if (_showPermissionGuide && Platform.isAndroid) {
+      return PermissionGuidePage(
+        onPermissionsGranted: _onPermissionsGranted,
+      );
+    }
+
+    // 否则显示主界面
+    return const HomeScreen();
+  }
 }

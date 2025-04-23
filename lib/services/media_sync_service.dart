@@ -6,6 +6,7 @@ import 'package:p_limit/p_limit.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:synchronized/synchronized.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../models/cloud_mapping.dart';
 import '../models/device_info.dart';
@@ -13,6 +14,7 @@ import '../models/media_index.dart';
 import 'webdav_service.dart';
 import 'desktop_media_scanner.dart';
 import 'mobile_media_scanner.dart'; // 添加导入MobileMediaScanner
+import 'foreground_sync_service.dart'; // 导入前台任务服务
 
 /// 同步步骤枚举，用于表示当前同步进度所处的阶段
 enum SyncStep {
@@ -474,8 +476,25 @@ class MediaSyncService {
 
   /// 与云端同步媒体文件和映射表
   Future<bool> syncWithCloud() async {
+    // 在移动平台上启动前台任务
+    bool foregroundTaskStarted = false;
+    if (!_isDesktopPlatform()) {
+      // 启动前台任务
+      await ForegroundSyncService.startForegroundTask(
+        title: 'Echo Pixel 同步',
+        desc: '正在与云端同步媒体文件...',
+        onProgressUpdate: (progress) {
+          _syncProgress = progress;
+        },
+      );
+      foregroundTaskStarted = true;
+    } else {
+      // 在桌面平台上使用唤醒锁
+      WakelockPlus.toggle(enable: true);
+    }
+
     // 使用锁确保不会并发同步
-    return _syncLock.synchronized(() async {
+    final result = await _syncLock.synchronized(() async {
       if (!_initialized) await initialize();
       if (!_webdavService.isConnected) {
         _syncError = 'WebDAV服务未连接';
@@ -494,6 +513,12 @@ class MediaSyncService {
 
         // 更新同步状态
         _updateSyncStatus('正在准备同步...');
+        if (foregroundTaskStarted) {
+          await ForegroundSyncService.updateNotification(
+            title: 'Echo Pixel 同步',
+            desc: '正在准备同步...',
+          );
+        }
 
         // 检查是否请求取消
         if (_cancelSync) {
@@ -505,6 +530,13 @@ class MediaSyncService {
         // 1. 上传本地映射表到云端
         _currentSyncStep = SyncStep.uploadingMapping;
         _updateSyncStatus('正在上传本地映射表...');
+        if (foregroundTaskStarted) {
+          await ForegroundSyncService.updateNotification(
+            title: 'Echo Pixel 同步 (10%)',
+            desc: '正在上传本地映射表...',
+            progress: 10,
+          );
+        }
         await _uploadMappingToCloud();
         _syncProgress = 10;
 
@@ -518,6 +550,13 @@ class MediaSyncService {
         // 2. 下载并合并云端的映射表
         _currentSyncStep = SyncStep.downloadingMappings;
         _updateSyncStatus('正在下载并合并云端映射表...');
+        if (foregroundTaskStarted) {
+          await ForegroundSyncService.updateNotification(
+            title: 'Echo Pixel 同步 (20%)',
+            desc: '正在下载并合并云端映射表...',
+            progress: 20,
+          );
+        }
         await _downloadAndMergeMappings();
         _syncProgress = 20;
 
@@ -531,6 +570,13 @@ class MediaSyncService {
         // 3. 创建云端目录结构
         _currentSyncStep = SyncStep.creatingDirectories;
         _updateSyncStatus('正在创建云端目录结构...');
+        if (foregroundTaskStarted) {
+          await ForegroundSyncService.updateNotification(
+            title: 'Echo Pixel 同步 (30%)',
+            desc: '正在创建云端目录结构...',
+            progress: 30,
+          );
+        }
         await _createCloudDirectories();
         _syncProgress = 30;
 
@@ -544,6 +590,13 @@ class MediaSyncService {
         // 4. 删除已在本地删除的文件
         _currentSyncStep = SyncStep.deletingFiles;
         _updateSyncStatus('正在删除已标记的文件...');
+        if (foregroundTaskStarted) {
+          await ForegroundSyncService.updateNotification(
+            title: 'Echo Pixel 同步 (40%)',
+            desc: '正在删除已标记的文件...',
+            progress: 40,
+          );
+        }
         await _deleteMarkedFiles();
         _syncProgress = 40;
 
@@ -557,8 +610,22 @@ class MediaSyncService {
         // 5. 上传待上传的文件
         _currentSyncStep = SyncStep.uploadingFiles;
         _updateSyncStatus('正在上传文件...');
+        if (foregroundTaskStarted) {
+          await ForegroundSyncService.updateNotification(
+            title: 'Echo Pixel 同步 (50%)',
+            desc: '正在上传文件...',
+            progress: 50,
+          );
+        }
         await _uploadPendingFiles();
         _syncProgress = 70;
+        if (foregroundTaskStarted) {
+          await ForegroundSyncService.updateNotification(
+            title: 'Echo Pixel 同步 (70%)',
+            desc: '文件上传完成',
+            progress: 70,
+          );
+        }
 
         // 检查是否请求取消
         if (_cancelSync) {
@@ -570,8 +637,22 @@ class MediaSyncService {
         // 6. 下载需要的文件
         _currentSyncStep = SyncStep.downloadingFiles;
         _updateSyncStatus('正在下载文件...');
+        if (foregroundTaskStarted) {
+          await ForegroundSyncService.updateNotification(
+            title: 'Echo Pixel 同步 (80%)',
+            desc: '正在下载文件...',
+            progress: 80,
+          );
+        }
         await _downloadNeededFiles();
         _syncProgress = 90;
+        if (foregroundTaskStarted) {
+          await ForegroundSyncService.updateNotification(
+            title: 'Echo Pixel 同步 (90%)',
+            desc: '文件下载完成',
+            progress: 90,
+          );
+        }
 
         // 检查是否请求取消
         if (_cancelSync) {
@@ -583,12 +664,26 @@ class MediaSyncService {
         // 7. 再次上传更新后的映射表
         _currentSyncStep = SyncStep.savingState;
         _updateSyncStatus('正在保存同步状态...');
+        if (foregroundTaskStarted) {
+          await ForegroundSyncService.updateNotification(
+            title: 'Echo Pixel 同步 (95%)',
+            desc: '正在保存同步状态...',
+            progress: 95,
+          );
+        }
         await _uploadMappingToCloud();
         _syncProgress = 100;
 
         // 标记同步完成
         _currentSyncStep = SyncStep.completed;
         _updateSyncStatus('同步完成');
+        if (foregroundTaskStarted) {
+          await ForegroundSyncService.updateNotification(
+            title: 'Echo Pixel 同步完成',
+            desc: '所有文件已同步',
+            progress: 100,
+          );
+        }
 
         // 8. 更新设备同步时间
         if (_deviceInfo != null) {
@@ -599,12 +694,29 @@ class MediaSyncService {
       } catch (e) {
         _syncError = _cancelSync ? '同步已被用户取消' : '同步错误: $e';
         _updateSyncStatus(_cancelSync ? '同步已被用户取消' : '同步出错: ${e.toString()}');
+        if (foregroundTaskStarted) {
+          await ForegroundSyncService.updateNotification(
+            title: 'Echo Pixel 同步',
+            desc: _cancelSync ? '同步已被用户取消' : '同步出错: ${e.toString()}',
+          );
+        }
         return false;
       } finally {
         _isSyncing = false;
         _cancelSync = false; // 重置取消标志
       }
     });
+
+    // 清理工作：停止前台任务或关闭屏幕唤醒
+    if (foregroundTaskStarted) {
+      // 延迟几秒钟后停止前台任务，让用户能看到完成通知
+      await Future.delayed(const Duration(seconds: 5));
+      await ForegroundSyncService.stopForegroundTask();
+    } else if (_isDesktopPlatform()) {
+      WakelockPlus.toggle(enable: false);
+    }
+
+    return result;
   }
 
   /// 更新同步状态信息
