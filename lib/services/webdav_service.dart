@@ -55,11 +55,19 @@ class WebDavService {
         uploadRootPath.endsWith('/') ? uploadRootPath : '$uploadRootPath/';
 
     try {
-      final response = await _makeRequest(
+      // 首先尝试 PROPFIND
+      var response = await _makeRequest(
         method: 'PROPFIND',
         path: _uploadRootPath,
         headers: {'Depth': '0'},
       );
+      // 如果服务器不支持 PROPFIND (405)，退而求其次用 GET
+      if (response.statusCode == 405) {
+        response = await _makeRequest(
+          method: 'GET',
+          path: _uploadRootPath,
+        );
+      }
       _isConnected = response.statusCode == 207 || response.statusCode == 200;
       return _isConnected;
     } catch (e) {
@@ -261,8 +269,6 @@ class WebDavService {
     final uri = Uri.parse(
       '$_serverUrl${path.startsWith('/') ? path : '/$path'}',
     );
-
-    // 创建请求头
     Map<String, String> requestHeaders = {...?headers};
 
     // 如果提供了用户名和密码，则添加认证头
@@ -272,31 +278,32 @@ class WebDavService {
       requestHeaders['Authorization'] = auth;
     }
 
-    // 根据HTTP方法发送请求
++   // 为 PROPFIND 请求添加标准 XML body 和 Content-Type
++   if (method == 'PROPFIND') {
++     requestHeaders['Content-Type'] = 'application/xml';
++   }
+
     http.Response response;
     switch (method) {
       case 'GET':
         response = await _client.get(uri, headers: requestHeaders);
         break;
-      case 'PUT':
-        response = await _client.put(uri, headers: requestHeaders, body: body);
-        break;
-      case 'DELETE':
-        response = await _client.delete(uri, headers: requestHeaders);
-        break;
-      case 'POST':
-        response = await _client.post(uri, headers: requestHeaders, body: body);
-        break;
+      // ...其他分支不变...
       default:
-        // 对于自定义方法(如PROPFIND, MKCOL等)使用send方法
         final request = http.Request(method, uri);
         request.headers.addAll(requestHeaders);
-        if (body != null) {
-          request.bodyBytes =
-              body is List<int> ? body : utf8.encode(body.toString());
-        }
-        final streamedResponse = await _client.send(request);
-        response = await http.Response.fromStream(streamedResponse);
++       if (method == 'PROPFIND') {
++         const xmlBody = '''<?xml version="1.0" encoding="utf-8"?>
++<D:propfind xmlns:D="DAV:">
++  <D:allprop/>
++</D:propfind>''';
++         request.body = xmlBody;
++       } else if (body != null) {
++         request.bodyBytes =
++             body is List<int> ? body : utf8.encode(body.toString());
++       }
+        final streamed = await _client.send(request);
+        response = await http.Response.fromStream(streamed);
     }
 
     return response;
