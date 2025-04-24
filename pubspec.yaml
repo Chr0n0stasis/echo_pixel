@@ -53,7 +53,7 @@ dependencies:
   media_kit: ^1.1.10                            # 核心包
   media_kit_video: ^1.2.4                       # 视频播放
   media_kit_libs_video: ^1.0.4                  # 视频播放的原生库
-  media_kit_native_event_loop: ^1.0.8          # 本地事件循环（提高性能）
+  media_kit_native_event_loop: ^1.0.8           # 本地事件循环（提高性能）
   media_kit_libs_windows_video: ^1.0.9          # Windows FFmpeg支持
   media_kit_libs_macos_video: ^1.1.4            # macOS FFmpeg支持
   media_kit_libs_linux: ^1.1.3                  # Linux库
