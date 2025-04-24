@@ -59,7 +59,7 @@ jobs:
             [Convert]::FromBase64String($env:PFX_BASE64)
           )
           Write-Host "Decoded certificate written to $certPath"
-          dart run msix:create --certificate-path "$certPath" --certificate-password "$env:PFX_PASSWORD" --release
+          dart run msix:create --build-windows false --certificate-path "$certPath" --certificate-password "$env:PFX_PASSWORD" --release
       - name: Upload Windows artifact(zip package)
         uses: actions/upload-artifact@v4
         with:
