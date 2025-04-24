@@ -938,11 +938,11 @@ class MediaSyncService {
       } catch (e) {
         debugPrint('目录不存在，尝试创建: $dirPath');
         // 目录不存在，使用递归创建功能
-        final success = await _webdavService.createDirectoryRecursive(dirPath);
-        if (success) {
-          debugPrint('成功创建目录: $dirPath');
-        } else {
-          throw Exception('无法创建目录: $dirPath');
+        try {
+          await _webdavService.createDirectoryRecursive(dirPath);
+        } catch (e) {
+          debugPrint('创建目录时出错: $e');
+          throw Exception('$e');
         }
       }
     } catch (e) {

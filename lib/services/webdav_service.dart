@@ -107,7 +107,7 @@ class WebDavService {
   }
 
   // 递归创建目录（处理嵌套目录创建）
-  Future<bool> createDirectoryRecursive(String path) async {
+  Future<void> createDirectoryRecursive(String path) async {
     if (!_isConnected) {
       throw Exception('WebDAV not connected');
     }
@@ -117,7 +117,7 @@ class WebDavService {
       final response = await _makeRequest(method: 'MKCOL', path: path);
 
       if (response.statusCode == 201 || response.statusCode == 200) {
-        return true;
+        return; // Success, just return void
       }
 
       // 如果失败且是因为父目录不存在
@@ -130,17 +130,19 @@ class WebDavService {
 
         // 递归创建父目录
         debugPrint('尝试创建父目录: $parentPath');
-        final parentSuccess = await createDirectoryRecursive(parentPath);
+        await createDirectoryRecursive(parentPath);
 
-        if (parentSuccess) {
-          // 父目录创建成功，再次尝试创建当前目录
-          final retryResponse = await _makeRequest(method: 'MKCOL', path: path);
-          return retryResponse.statusCode == 201 ||
-              retryResponse.statusCode == 200;
+        // 父目录创建成功，再次尝试创建当前目录
+        final retryResponse = await _makeRequest(method: 'MKCOL', path: path);
+        if (retryResponse.statusCode != 201 &&
+            retryResponse.statusCode != 200) {
+          throw Exception(
+              'Failed to create directory: ${retryResponse.statusCode}');
         }
+        return;
       }
 
-      return false;
+      throw Exception('Failed to create directory: ${response.statusCode}');
     } catch (e) {
       debugPrint('创建目录错误: $e');
       throw Exception('Error creating directory: $e');
