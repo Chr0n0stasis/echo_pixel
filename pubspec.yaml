@@ -161,6 +161,8 @@ flutter:
 
 msix_config:
   display_name: 'Echo Pixel'
-  publisher_display_name: shadow3
-  identity_name: io.github.shadow3.EchoPixel
-  logo_path: assets\icon\foreground.png
+  publisher_display_name: 'shadow3'
+  identity_name: 'io.github.shadow3.EchoPixel'
+  logo_path: 'assets\icon\foreground.png'
+  publisher: 'CN=shadow3, C=CN'
+  signtool_options: "/td SHA256"
