@@ -88,16 +88,16 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Echo Pixel',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-        useMaterial3: true,
-      ),
+          colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+          useMaterial3: true,
+          fontFamily: 'MapleMonoCN'),
       darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blue,
-          brightness: Brightness.dark,
-        ),
-        useMaterial3: true,
-      ),
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: Colors.blue,
+            brightness: Brightness.dark,
+          ),
+          useMaterial3: true,
+          fontFamily: 'MapleMonoCN'),
       // 根据ThemeService设置主题模式
       themeMode: themeService.themeMode,
       home: const AppStartupController(),

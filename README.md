@@ -21,3 +21,7 @@
 [release-url]: https://github.com/shadow3aaa/echo_pixel/releases/latest
 [download-badge]: https://img.shields.io/github/downloads/shadow3aaa/echo_pixel/total?style=for-the-badge
 [download-url]: https://github.com/shadow3aaa/echo_pixel/releases/latest
+
+## Credits
+
+- [Maple Font](https://github.com/subframe7536/Maple-font) [@subframe7536](https://github.com/subframe7536)
