@@ -44,11 +44,28 @@ jobs:
         run: flutter pub get
       - name: Build Windows desktop
         run: flutter build windows --release
-      - name: Upload Windows artifact
+      - name: Package Msix
+        env:
+          PFX_B64: ${{ secrets.WINDOWS_CEF }}
+          PFX_PASSWD: ${{ secrets.WINDOWS_CEF_PASSWD }}
+        run: |
+          $certPath = Join-Path $env:RUNNER_TEMP 'signing.pfx'
+          [IO.File]::WriteAllBytes(
+            $certPath,
+            [Convert]::FromBase64String($env:PFX_BASE64)
+          )
+          Write-Host "Decoded certificate written to $certPath"
+          dart run msix:create --certificate-path "$certPath" --certificate-password "$env:PFX_PASSWORD" --release
+      - name: Upload Windows artifact(zip package)
         uses: actions/upload-artifact@v4
         with:
-          name: windows-app
-          path: build\windows\x64\runner\Release   # .exe及相关文件
+          name: EchoPixel-Windows
+          path: build\windows\x64\runner\Release
+      - name: Upload Windows artifact(msix package)
+        uses: actions/upload-artifact@v4
+        with:
+          name: EchoPixel-Windows-MSIX
+          path: build\windows\x64\runner\Release\echo_pixel.msix
 
   macos:
     name: Build macOS App
