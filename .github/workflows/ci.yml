@@ -59,7 +59,7 @@ jobs:
         run: flutter build windows --release
       - name: Package Msix
         env:
-          PFX_B64: ${{ secrets.WINDOWS_CEF }}
+          PFX_BASE64: ${{ secrets.WINDOWS_CEF }}
           PFX_PASSWD: ${{ secrets.WINDOWS_CEF_PASSWD }}
         run: |
           $certPath = Join-Path $env:RUNNER_TEMP 'signing.pfx'
