@@ -274,14 +274,14 @@ class WebDavService {
     // 如果提供了用户名和密码，则添加认证头
     if (_username != null && _password != null) {
       final auth =
-          'Basic ${base64Encode(utf8.encode('$_username:$_password'))}';
+          'Basic [0m${base64Encode(utf8.encode('$_username:$_password'))}';
       requestHeaders['Authorization'] = auth;
     }
 
-+   // 为 PROPFIND 请求添加标准 XML body 和 Content-Type
-+   if (method == 'PROPFIND') {
-+     requestHeaders['Content-Type'] = 'application/xml';
-+   }
+    // 为 PROPFIND 请求添加标准 XML body 和 Content-Type
+    if (method == 'PROPFIND') {
+      requestHeaders['Content-Type'] = 'application/xml';
+    }
 
     http.Response response;
     switch (method) {
@@ -292,16 +292,16 @@ class WebDavService {
       default:
         final request = http.Request(method, uri);
         request.headers.addAll(requestHeaders);
-+       if (method == 'PROPFIND') {
-+         const xmlBody = '''<?xml version="1.0" encoding="utf-8"?>
-+<D:propfind xmlns:D="DAV:">
-+  <D:allprop/>
-+</D:propfind>''';
-+         request.body = xmlBody;
-+       } else if (body != null) {
-+         request.bodyBytes =
-+             body is List<int> ? body : utf8.encode(body.toString());
-+       }
+        if (method == 'PROPFIND') {
+          const xmlBody = '''<?xml version="1.0" encoding="utf-8"?>
+<D:propfind xmlns:D="DAV:">
+  <D:allprop/>
+</D:propfind>''';
+          request.body = xmlBody;
+        } else if (body != null) {
+          request.bodyBytes =
+              body is List<int> ? body : utf8.encode(body.toString());
+        }
         final streamed = await _client.send(request);
         response = await http.Response.fromStream(streamed);
     }
