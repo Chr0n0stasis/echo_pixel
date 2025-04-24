@@ -21,8 +21,17 @@ jobs:
           channel: stable
       - name: Install dependencies
         run: flutter pub get
-      - name: Build split APKs per ABI
-        run: flutter build apk --release --target-platform android-arm,android-arm64,android-x64 --split-per-abi
+      - name: Build Android APKs
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_JKS }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_JKS_PASSWD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_JKS_ALIAS }}
+          KEY_ALIAS_PASSWORD: ${{ secrets.ANDROID_JKS_PASSWD }}
+        run: |
+          export KEYSTORE_PATH="$RUNNER_TEMP/keystore.jks"
+          cat $KEYSTORE | base64 -d > "$KEYSTORE_PATH"
+          ex
+          flutter build apk --release --target-platform android-arm,android-arm64,android-x64 --split-per-abi
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
